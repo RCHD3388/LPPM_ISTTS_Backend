@@ -1,6 +1,8 @@
 // Helper: fetch HTML with headers + timeout + retries
 const cheerio = require('cheerio')
+const JSON5 = require('json5');
 const axios = require("axios")
+const puppeteer = require('puppeteer');
 async function fetchHtml(url, retries = 2) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (compatible; SintaScoreBot/1.0; +https://example.com/bot)'
@@ -298,5 +300,347 @@ async function getAuthorArticlesByView(authorId, { view = 'scopus', maxPages = 1
 }
 
 
+async function scrapeChartsWithBrowser(url, { timeoutMs = 45000 } = {}) {
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    );
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
-module.exports = {getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
+    // Tunggu sampai ECharts & instance dua chart siap
+    await page.waitForFunction(() => {
+      const ok = (id) => {
+        const el = document.getElementById(id);
+        // eslint-disable-next-line no-undef
+        if (!el || !window.echarts) return false;
+        // eslint-disable-next-line no-undef
+        const inst = window.echarts.getInstanceByDom(el);
+        if (!inst) return false;
+        const opt = inst.getOption();
+        return opt && opt.series && opt.series.length > 0;
+      };
+      return ok('quartile-pie') && ok('research-radar');
+    }, { timeout: timeoutMs }).catch(() => {}); // jangan gagal—kita tetap coba ambil yang ada
+
+    const data = await page.evaluate(() => {
+      function grabPie(id) {
+        const el = document.getElementById(id);
+        // eslint-disable-next-line no-undef
+        const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
+        if (!inst) return [];
+        const opt = inst.getOption();
+        const series = opt.series && opt.series.find(s => (s.type || '').toLowerCase() === 'pie');
+        if (!series || !Array.isArray(series.data)) return [];
+        return series.data.map(d => ({ name: String(d.name ?? ''), value: Number(d.value ?? 0) }));
+      }
+      function grabRadar(id) {
+        const el = document.getElementById(id);
+        // eslint-disable-next-line no-undef
+        const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
+        if (!inst) return [];
+        const opt = inst.getOption();
+        const radar = (opt.radar && opt.radar[0]) || opt.radar;
+        const indicators = (radar && radar.indicator) || [];
+        const series = opt.series && opt.series.find(s => (s.type || '').toLowerCase() === 'radar');
+        const vals = (series && series.data && series.data[0] && series.data[0].value) || [];
+        const out = [];
+        const n = Math.max(indicators.length, vals.length);
+        for (let i = 0; i < n; i++) {
+          const name = (indicators[i] && indicators[i].name) || `dim_${i+1}`;
+          out.push({ name: String(name), value: Number(vals[i] ?? 0) });
+        }
+        return out;
+      }
+      return {
+        quartile: grabPie('quartile-pie'),
+        researchOutput: grabRadar('research-radar')
+      };
+    });
+
+    return { quartile: data.quartile || [], researchOutput: data.researchOutput || [] };
+  } finally {
+    await browser.close();
+  }
+}
+
+async function scrapeChartsFromPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  const pieOpt   = extractEchartsOptionFromScripts($, 'quartile-pie');
+  const radarOpt = extractEchartsOptionFromScripts($, 'research-radar');
+
+  let quartile = readPieSeriesData(pieOpt) || [];
+  let researchOutput = readRadarSeriesData(radarOpt) || [];
+
+  if (quartile.length === 0) {
+    quartile = parseQuartileFromTooltip($, '#quartile-pie') || [];
+  }
+  if (researchOutput.length === 0) {
+    researchOutput = parseRadarFromTooltip($, '#research-radar') || [];
+  }
+
+  return { quartile, researchOutput };
+}
+
+async function scrapeChartsAuto(url, { forceBrowser = false } = {}) {
+  // 1) HTML parser (cepat)
+  if (!forceBrowser) {
+    try {
+      const data = await scrapeChartsFromPage(url);
+      if ((data.quartile && data.quartile.length) || (data.researchOutput && data.researchOutput.length)) {
+        return data;
+      }
+    } catch (_) {}
+  }
+  // 2) Fallback: headless browser (andal)
+  return await scrapeChartsWithBrowser(url);
+}
+
+
+function normalizeView(v='scopus') {
+  v = String(v).toLowerCase();
+  const ok = new Set(['scopus','garuda','googlescholar','rama']);
+  return ok.has(v) ? v : 'scopus';
+}
+
+// Author: SELALU pakai ?view=... (termasuk scopus)
+// Affiliation: untuk konsistensi, juga pakai ?view=...
+function buildAffiliationChartUrls(affiliationId, view) {
+  const v = normalizeView(view);
+  const q = `?view=${v}`;
+  return DOMAINS.map(base => `${base}/affiliations/profile/${affiliationId}/${q}`.replace(/\/\?/, '/?'));
+}
+function buildAuthorChartUrls(authorId, view) {
+  const v = normalizeView(view);
+  const q = `?view=${v}`; // FORCE untuk author
+  return DOMAINS.map(base => `${base}/authors/profile/${authorId}/${q}`.replace(/\/\?/, '/?'));
+}
+// ====== ECHARTS OPTION EXTRACTOR ======
+/**
+ * Cari <script> yang memanggil:
+ *   echarts.init(document.getElementById('<containerId>'))....setOption({...});
+ * Ambil objek option di dalam setOption(...) dan parse pakai JSON5.
+ */
+function extractEchartsOptionFromScripts($, containerId) {
+  const scripts = Array.from($('script')).map(s => $(s).html() || '');
+  const idPat = containerId.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+
+  // Pola yang cukup fleksibel untuk inisialisasi + setOption di baris berbeda
+  const re = new RegExp(
+    `echarts\\s*\\.\\s*init\\s*\\(\\s*document\\.getElementById\\(['"]${idPat}['"]\\)[\\s\\S]*?\\)\\s*\\.\\s*setOption\\s*\\((\\{[\\s\\S]*?\\})\\)\\s*;`,
+    'm'
+  );
+
+  for (const code of scripts) {
+    const m = code.match(re);
+    if (m && m[1]) {
+      try {
+        return JSON5.parse(m[1]); // dukung trailing comma / unquoted keys
+      } catch (_) { /* lanjut ke script berikutnya */ }
+    }
+  }
+  return null;
+}
+
+// ====== PARSER: PIE & RADAR ======
+function readPieSeriesData(option) {
+  if (!option) return null;
+  const series = Array.isArray(option.series) ? option.series : (option.series ? [option.series] : []);
+  const pie = series.find(s => (s.type || '').toLowerCase() === 'pie' && Array.isArray(s.data));
+  if (!pie) return null;
+  return pie.data.map(d => ({ name: String(d.name ?? ''), value: Number(d.value ?? 0) }));
+}
+function readRadarSeriesData(option) {
+  if (!option) return null;
+  const indicators = option.radar?.indicator || option.polar?.indicator || [];
+  const series = Array.isArray(option.series) ? option.series : (option.series ? [option.series] : []);
+  const radarSeries = series.find(s => (s.type || '').toLowerCase() === 'radar');
+  if (!radarSeries) return null;
+  const vals = radarSeries.data?.[0]?.value || [];
+  if (!indicators.length && !vals.length) return null;
+  const out = [];
+  for (let i = 0; i < Math.max(indicators.length, vals.length); i++) {
+    const name = indicators[i]?.name ?? `dim_${i+1}`;
+    out.push({ name: String(name), value: Number(vals[i] ?? 0) });
+  }
+  return out;
+}
+
+// ====== FALLBACK: baca dari tooltip DOM (jika option tak ketemu) ======
+function parseQuartileFromTooltip($, containerSelector) {
+  // ambil tooltip terakhir (biasanya tersembunyi)
+  const t = $(containerSelector).find('div[style*="position: absolute"]').last().text() || '';
+  // Pola: "No-Q: 98 (62.02%)" atau "Q1: 12 (..%)"
+  const m = t.match(/([A-Za-z0-9\-+ ]+)\s*:\s*(\d+)(?:\s*\(\d+(?:\.\d+)?%\))?/g);
+  if (!m) return null;
+  return m.map(seg => {
+    const mm = seg.match(/^\s*([A-Za-z0-9\-+ ]+)\s*:\s*(\d+)/);
+    return mm ? { name: mm[1].trim(), value: Number(mm[2]) } : null;
+  }).filter(Boolean);
+}
+function parseRadarFromTooltip($, containerSelector) {
+  const t = $(containerSelector).find('div[style*="position: absolute"]').last().text() || '';
+  // Pola: "Article : 59  Conference : 90  Others : 9"
+  const pairs = [...t.matchAll(/([A-Za-z0-9\-+ ]+)\s*:\s*(\d+)/g)];
+  if (!pairs.length) return null;
+  return pairs.map(p => ({ name: p[1].trim(), value: Number(p[2]) }));
+}
+
+// ====== SCRAPE: 1 halaman ======
+async function scrapeChartsFromPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  // 1) Prefer ambil dari option ECharts pada <script>
+  const pieOpt   = extractEchartsOptionFromScripts($, 'quartile-pie');
+  const radarOpt = extractEchartsOptionFromScripts($, 'research-radar');
+
+  let quartile = readPieSeriesData(pieOpt) || [];
+  let researchOutput = readRadarSeriesData(radarOpt) || [];
+
+  // 2) Fallback ke tooltip bila option tidak ditemukan
+  if (quartile.length === 0) {
+    quartile = parseQuartileFromTooltip($, '#quartile-pie') || [];
+  }
+  if (researchOutput.length === 0) {
+    researchOutput = parseRadarFromTooltip($, '#research-radar') || [];
+  }
+
+  return { quartile, researchOutput };
+}
+
+
+async function getAffiliationCharts(affiliationId, { view='scopus', engine='auto' } = {}) {
+  const forceBrowser = String(engine).toLowerCase() === 'browser';
+  let lastErr;
+  for (const url of buildAffiliationChartUrls(affiliationId, view)) {
+    try {
+      const data = await scrapeChartsAuto(url, { forceBrowser });
+      return { source: url, view: normalizeView(view), ...data };
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error(`Gagal mengambil chart affiliation: ${lastErr?.message || 'unknown error'}`);
+}
+
+async function getAuthorCharts(authorId, { view='scopus', engine='auto' } = {}) {
+  const forceBrowser = String(engine).toLowerCase() === 'browser';
+  let lastErr;
+  for (const url of buildAuthorChartUrls(authorId, view)) {
+    try {
+      const data = await scrapeChartsAuto(url, { forceBrowser });
+      return { source: url, view: normalizeView(view), ...data };
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error(`Gagal mengambil chart author: ${lastErr?.message || 'unknown error'}`);
+}
+
+// --- utils angka ---
+function toIntOrNull(str) {
+  if (str == null) return null;
+  const m = String(str).replace(/[^\d\-]/g, '');
+  if (m === '' || m === '-') return null;
+  return Number(m);
+}
+
+function cleanTxt(s) {
+  return (s || '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Parse stat-table:
+ * header kolom: Scopus, GScholar, WOS (kolom pertama kosong/label baris)
+ * baris: Article, Citation, Cited Document, H-Index, i10-Index, G-Index
+ * @param $ cheerio root
+ * @param includeHidden  jika false, kolom dengan .d-none di-skip (default false)
+ */
+function parseStatTable($, { includeHidden = false } = {}) {
+  const $table = $('table.stat-table').first();
+  if (!$table.length) return null;
+
+  // --- ambil header (nama sumber) ---
+  const sources = [];
+  const headerTds = $table.find('thead tr').first().find('th');
+  headerTds.each((i, th) => {
+    if (i === 0) return; // kolom label baris
+    const $th = $(th);
+    const hidden = $th.hasClass('d-none');
+    const label = cleanTxt($th.text()); // e.g. "Scopus", "GScholar", "WOS"
+    if (!label) return;
+    if (hidden && !includeHidden) return;
+    sources.push({ label, hidden });
+  });
+  if (sources.length === 0) return { sources: [], rows: [], bySource: {} };
+
+  // --- ambil baris data ---
+  const rows = [];
+  const bySource = Object.fromEntries(sources.map(s => [s.label, {}]));
+
+  $table.find('tbody tr').each((_, tr) => {
+    const $tr = $(tr);
+    const $cells = $tr.find('td');
+    if ($cells.length === 0) return;
+
+    // kolom pertama = nama metrik
+    const metric = cleanTxt($cells.first().text());
+    if (!metric) return;
+
+    // map tiap sumber ke sel yang sesuai (urutannya ikuti header di atas)
+    let cellIdx = 1; // karena index 0 dipakai metric
+    const values = {};
+    for (const s of sources) {
+      const $td = $cells.eq(cellIdx++);
+      const val = toIntOrNull(cleanTxt($td.text()));
+      values[s.label] = val;
+      bySource[s.label][metric] = val;
+    }
+
+    rows.push({ metric, ...values });
+  });
+
+  return { sources: sources.map(s => s.label), rows, bySource };
+}
+
+async function scrapeStatsFromPage(url, { includeHidden = false } = {}) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+  const parsed = parseStatTable($, { includeHidden });
+  return parsed || { sources: [], rows: [], bySource: {} };
+}
+
+async function getAffiliationStats(affiliationId, { view = 'scopus', includeHidden = false } = {}) {
+  let lastErr;
+  for (const url of buildAffiliationChartUrls(affiliationId, view)) {
+    try {
+      const data = await scrapeStatsFromPage(url, { includeHidden });
+      // jika tidak ada sumber satupun, coba URL berikutnya
+      if (data.sources.length === 0) continue;
+      return { source: url, view: normalizeView(view), ...data };
+    } catch (e) { lastErr = e; }
+  }
+  // fallback terakhir: tetap kembalikan struktur kosong agar respons konsisten
+  if (!lastErr) return { source: null, view: normalizeView(view), sources: [], rows: [], bySource: {} };
+  throw new Error(`Gagal mengambil stats affiliation: ${lastErr.message || 'unknown error'}`);
+}
+
+async function getAuthorStats(authorId, { view = 'scopus', includeHidden = false } = {}) {
+  let lastErr;
+  for (const url of buildAuthorChartUrls(authorId, view)) {
+    try {
+      const data = await scrapeStatsFromPage(url, { includeHidden });
+      if (data.sources.length === 0) continue;
+      return { source: url, view: normalizeView(view), ...data };
+    } catch (e) { lastErr = e; }
+  }
+  if (!lastErr) return { source: null, view: normalizeView(view), sources: [], rows: [], bySource: {} };
+  throw new Error(`Gagal mengambil stats author: ${lastErr.message || 'unknown error'}`);
+}
+
+
+module.exports = {getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}

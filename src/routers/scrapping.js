@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const {getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
+const {getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
 
 const routers = Router()
 
@@ -55,6 +55,77 @@ routers.get('/articles', async (req, res) => {
     }
 
     res.json({ ok: true, view, data, meta: { limit, maxPages } });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
+  }
+});
+
+// GET /sinta/charts?affiliationId=2136&view=scopus&engine=browser
+// GET /sinta/charts?authorId=169786&view=rama
+routers.get('/charts', async (req, res) => {
+  try {
+    const { affiliationId, authorId } = req.query;
+    const view = normalizeView(req.query.view || 'scopus');
+    const engine = (req.query.engine || 'auto').toString().toLowerCase();
+
+    if (!affiliationId && !authorId) {
+      return res.status(400).json({
+        ok: false, error: 'BadRequest',
+        detail: 'Gunakan salah satu parameter: affiliationId atau authorId'
+      });
+    }
+
+    let data;
+    if (authorId && affiliationId) {
+      const [author, affiliation] = await Promise.all([
+        getAuthorCharts(String(authorId), { view, engine }),
+        getAffiliationCharts(String(affiliationId), { view, engine })
+      ]);
+      data = { author, affiliation };
+    } else if (authorId) {
+      data = await getAuthorCharts(String(authorId), { view, engine });
+    } else {
+      data = await getAffiliationCharts(String(affiliationId), { view, engine });
+    }
+
+    res.json({ ok: true, view, engine, data });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
+  }
+});
+
+
+// GET /sinta/stats?affiliationId=2136&view=scopus
+// GET /sinta/stats?authorId=169786&view=googlescholar
+// Opsional: &includeHidden=true  (ikutkan kolom .d-none/WOS)
+routers.get('/stats', async (req, res) => {
+  try {
+    const { affiliationId, authorId } = req.query;
+    const view = normalizeView(req.query.view || 'scopus');
+    const includeHidden = String(req.query.includeHidden || 'false').toLowerCase() === 'true';
+
+    if (!affiliationId && !authorId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'BadRequest',
+        detail: 'Gunakan salah satu parameter: affiliationId atau authorId'
+      });
+    }
+
+    let data;
+    if (authorId && affiliationId) {
+      const [author, affiliation] = await Promise.all([
+        getAuthorStats(String(authorId), { view, includeHidden }),
+        getAffiliationStats(String(affiliationId), { view, includeHidden })
+      ]);
+      data = { author, affiliation };
+    } else if (authorId) {
+      data = await getAuthorStats(String(authorId), { view, includeHidden });
+    } else {
+      data = await getAffiliationStats(String(affiliationId), { view, includeHidden });
+    }
+
+    res.json({ ok: true, view, includeHidden, data });
   } catch (e) {
     res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
   }
