@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const {getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
+const {normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
 
 const routers = Router()
 
@@ -130,5 +130,44 @@ routers.get('/stats', async (req, res) => {
     res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
   }
 });
+
+
+// GET /sinta/activity?affiliationId=2136
+// GET /sinta/activity?affiliationId=2136&view=services
+// GET /sinta/activity?authorId=169786&view=researches
+// Opsional: &engine=browser (paksa headless)
+routers.get('/activity', async (req, res) => {
+  try {
+    const { affiliationId, authorId } = req.query;
+    const view = normalizeActivityView(req.query.view || '');
+    const engine = (req.query.engine || 'auto').toString().toLowerCase();
+
+    if (!affiliationId && !authorId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'BadRequest',
+        detail: 'Gunakan salah satu parameter: affiliationId atau authorId'
+      });
+    }
+
+    let data;
+    if (authorId && affiliationId) {
+      const [author, affiliation] = await Promise.all([
+        getAuthorActivity(String(authorId), { view, engine }),
+        getAffiliationActivity(String(affiliationId), { view, engine })
+      ]);
+      data = { author, affiliation };
+    } else if (authorId) {
+      data = await getAuthorActivity(String(authorId), { view, engine });
+    } else {
+      data = await getAffiliationActivity(String(affiliationId), { view, engine });
+    }
+
+    res.json({ ok: true, view, engine, data });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
+  }
+});
+
 
 module.exports = routers;

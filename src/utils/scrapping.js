@@ -643,4 +643,237 @@ async function getAuthorStats(authorId, { view = 'scopus', includeHidden = false
 }
 
 
-module.exports = {getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
+// ==== ACTIVITY VIEW HANDLING ('' | 'services' | 'researches') ====
+function normalizeActivityView(v = '') {
+  v = String(v || '').toLowerCase();
+  const ok = new Set(['', 'services', 'researches']);
+  return ok.has(v) ? v : '';
+}
+
+function buildAffiliationActivityUrls(affiliationId, view) {
+  const v = normalizeActivityView(view);
+  const q = v ? `?view=${v}` : '';
+  return DOMAINS.map(base => `${base}/affiliations/profile/${affiliationId}/${q}`.replace(/\/\?/, '/?'));
+}
+
+function buildAuthorActivityUrls(authorId, view) {
+  const v = normalizeActivityView(view);
+  const q = v ? `?view=${v}` : ''; // kalau ingin force param selalu ada, ganti jadi `?view=${v||'services'}`
+  return DOMAINS.map(base => `${base}/authors/profile/${authorId}/${q}`.replace(/\/\?/, '/?'));
+}
+
+
+
+// ==== ECHARTS option -> cartesian series (xAxis/series) ====
+function readCartesianSeries(option) {
+  if (!option) return null;
+
+  // Ambil kategori di xAxis
+  const xAxis = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+  const categories = (xAxis && Array.isArray(xAxis.data)) ? xAxis.data.map(String) : [];
+
+  // Ambil series type line/bar
+  const seriesArr = Array.isArray(option.series) ? option.series : (option.series ? [option.series] : []);
+  const usable = seriesArr.filter(s => {
+    const t = String(s.type || '').toLowerCase();
+    return (t === 'line' || t === 'bar') && Array.isArray(s.data);
+  });
+
+  if (usable.length === 0) return { categories, series: [] };
+
+  const series = usable.map(s => ({
+    name: String(s.name ?? ''),
+    type: String(s.type || '').toLowerCase(),
+    data: s.data.map(v => (v == null ? null : Number(v)))
+  }));
+
+  return { categories, series };
+}
+
+// ==== Scrape dari HTML statis (tanpa headless) ====
+async function scrapeActivityFromPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  // Ambil option untuk #service-chart-articles
+  const opt = extractEchartsOptionFromScripts($, 'service-chart-articles');
+  const parsed = readCartesianSeries(opt) || { categories: [], series: [] };
+  return parsed;
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+async function scrapeActivityWithBrowser(url, { timeoutMs = 45000, extraWaitMs = 1200 } = {}) {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox','--disable-setuid-sandbox']
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    );
+
+    // Lebih sabar untuk XHR/lazy
+    try {
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
+    } catch {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      await sleep(1500);
+    }
+    if (extraWaitMs) await sleep(extraWaitMs);
+
+    // Helper di browser: cari kandidat chart di dalam .stat-chart
+    const probeOnce = async () => {
+      return await page.evaluate(() => {
+        const out = [];
+        const S = (sel) => Array.from(document.querySelectorAll(sel));
+        // kandidat kuat: elemen dalam .stat-chart yang punya id
+        const cand = S('.stat-chart [id], #service-chart-articles');
+        const seen = new Set();
+        for (const el of cand) {
+          if (!el.id || seen.has(el.id)) continue;
+          seen.add(el.id);
+          // eslint-disable-next-line no-undef
+          const inst = (window.echarts && window.echarts.getInstanceByDom) ? window.echarts.getInstanceByDom(el) : null;
+          const hasAttr = el.hasAttribute('_echarts_instance_');
+          const hasInst = !!inst;
+          let categories = [], seriesCount = 0;
+          if (inst) {
+            const opt = inst.getOption() || {};
+            const xa = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
+            categories = (xa && Array.isArray(xa.data)) ? xa.data.map(String) : [];
+            const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+            seriesCount = sArr.length || 0;
+          }
+          out.push({ id: el.id, hasAttr, hasInst, categoriesLen: categories.length, seriesCount });
+        }
+        return out;
+      });
+    };
+
+    // Scroll perlahan untuk memicu lazy-render
+    const tryScrollAndProbe = async () => {
+      const steps = 6;
+      for (let i=0;i<steps;i++){
+        const size = await page.evaluate(() => ({ h: document.body.scrollHeight, y: window.scrollY }));
+        await page.evaluate(y => window.scrollTo({ top: y, behavior: 'instant' }), (size.h/steps)*(i+1));
+        await sleep(500);
+        const info = await probeOnce();
+        const pick = info.find(x =>
+          (x.hasInst || x.hasAttr) && (x.seriesCount > 0 || x.categoriesLen > 0)
+        );
+        if (pick) return pick.id;
+      }
+      return null;
+    };
+
+    // 1) coba probe tanpa scroll
+    let targetId = null;
+    const firstProbe = await probeOnce();
+    const picked1 = firstProbe.find(x =>
+      (x.hasInst || x.hasAttr) && (x.seriesCount > 0 || x.categoriesLen > 0)
+    );
+    if (picked1) {
+      targetId = picked1.id;
+    } else {
+      // 2) scroll & probe berulang
+      targetId = await tryScrollAndProbe();
+    }
+
+    // Jika masih belum ketemu, fallback: pilih kandidat paling mirip “service/activities”
+    if (!targetId && firstProbe.length){
+      const byHint = firstProbe.find(x => /service|activity|activities|articles/i.test(x.id));
+      targetId = byHint?.id || firstProbe[0].id;
+    }
+    if (!targetId) return { categories: [], series: [] };
+
+    // Akhirnya ambil data dari chart terpilih
+    const result = await page.evaluate((id) => {
+      function toStr(x){ return x==null ? '' : String(x); }
+      function toNum(x){ return (x==null || x==='') ? null : Number(x); }
+      const el = document.getElementById(id);
+      // eslint-disable-next-line no-undef
+      const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
+      if (!inst) return { categories: [], series: [] };
+      const opt = inst.getOption();
+      const xa = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
+      const categories = (xa && Array.isArray(xa.data)) ? xa.data.map(toStr) : [];
+      const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+      const usable = sArr.filter(s => {
+        const t = toStr(s.type).toLowerCase();
+        return (t === 'line' || t === 'bar') && Array.isArray(s.data);
+      });
+      const series = usable.map(s => ({
+        name: toStr(s.name),
+        type: toStr(s.type).toLowerCase(),
+        data: s.data.map(toNum)
+      }));
+      return { categories, series, id };
+    }, targetId);
+
+    // Optional: trigger resize kalau data kosong (beberapa chart render setelah resize)
+    if ((!result.categories.length || !result.series.length)) {
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      await sleep(600);
+      const retry = await page.evaluate((id) => {
+        const el = document.getElementById(id);
+        // eslint-disable-next-line no-undef
+        const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
+        if (!inst) return { categories: [], series: [] };
+        const opt = inst.getOption();
+        const xa = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
+        const categories = (xa && Array.isArray(xa.data)) ? xa.data.map(String) : [];
+        const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+        const series = sArr.map(s => ({ name: String(s.name||''), type: String(s.type||'').toLowerCase(), data: (s.data||[]).map(v => v==null?null:Number(v)) }));
+        return { categories, series, id };
+      }, result.id);
+      return { categories: retry.categories, series: retry.series };
+    }
+
+    return { categories: result.categories, series: result.series };
+  } finally {
+    await browser.close();
+  }
+}
+
+
+
+// ==== Auto (HTML dulu, lalu headless jika kosong/ingin dipaksa) ====
+async function scrapeActivityAuto(url, { engine = 'auto' } = {}) {
+  const forceBrowser = String(engine).toLowerCase() === 'browser';
+  if (!forceBrowser) {
+    try {
+      const data = await scrapeActivityFromPage(url);
+      if ((data.categories && data.categories.length) && (data.series && data.series.length)) {
+        return data;
+      }
+    } catch (_) {}
+  }
+  return await scrapeActivityWithBrowser(url);
+}
+
+async function getAffiliationActivity(affiliationId, { view = '', engine = 'auto' } = {}) {
+  let lastErr;
+  for (const url of buildAffiliationActivityUrls(affiliationId, view)) {
+    try {
+      const data = await scrapeActivityAuto(url, { engine });
+      // pastikan struktur selalu konsisten
+      return { source: url, view: normalizeActivityView(view), ...data };
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error(`Gagal mengambil activity affiliation: ${lastErr?.message || 'unknown error'}`);
+}
+
+async function getAuthorActivity(authorId, { view = '', engine = 'auto' } = {}) {
+  let lastErr;
+  for (const url of buildAuthorActivityUrls(authorId, view)) {
+    try {
+      const data = await scrapeActivityAuto(url, { engine });
+      return { source: url, view: normalizeActivityView(view), ...data };
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error(`Gagal mengambil activity author: ${lastErr?.message || 'unknown error'}`);
+}
+
+
+module.exports = {normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
