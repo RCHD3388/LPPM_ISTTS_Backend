@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const {normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
+const {getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
 
 const routers = Router()
 
@@ -168,6 +168,25 @@ routers.get('/activity', async (req, res) => {
     res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
   }
 });
+
+// GET /sinta/wcu?affiliationId=2136
+// Opsional: &engine=browser  (paksa headless)
+routers.get('/wcu', async (req, res) => {
+  try {
+    const { affiliationId } = req.query;
+    const engine = (req.query.engine || 'auto').toString().toLowerCase();
+
+    if (!affiliationId) {
+      return res.status(400).json({ ok: false, error: 'BadRequest', detail: 'Butuh parameter affiliationId' });
+    }
+
+    const data = await getAffiliationWcu(String(affiliationId), { engine });
+    res.json({ ok: true, engine, data });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
+  }
+});
+
 
 
 module.exports = routers;

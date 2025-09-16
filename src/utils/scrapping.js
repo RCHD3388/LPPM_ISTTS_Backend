@@ -876,4 +876,176 @@ async function getAuthorActivity(authorId, { view = '', engine = 'auto' } = {}) 
 }
 
 
-module.exports = {normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
+
+function buildAffiliationWcuUrls(affiliationId) {
+  return DOMAINS.map(base => `${base}/affiliations/wcuanalysis/${affiliationId}`);
+}
+function readCategoryValueSeries(option) {
+  if (!option) return null;
+
+  const pickAxis = (axis) => {
+    if (!axis) return [];
+    if (Array.isArray(axis)) return axis[0]?.data || [];
+    return axis.data || [];
+  };
+
+  let categories = pickAxis(option.xAxis);
+  if (!categories?.length) categories = pickAxis(option.yAxis);
+  categories = (categories || []).map(s => String(s));
+
+  const seriesArr = Array.isArray(option.series) ? option.series : (option.series ? [option.series] : []);
+  const usable = seriesArr.find(s => Array.isArray(s.data));
+  const data = (usable?.data || []).map(v => (v == null ? null : Number(v)));
+
+  if (!categories.length || !data.length) return null;
+
+  return {
+    categories,
+    data,
+    seriesName: String(usable?.name ?? '')
+  };
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function parseWcuTooltip($) {
+  const tooltip = $('#wcu_overview1').find('div[style*="position: absolute"]').last().text();
+  const pairs = [...tooltip.matchAll(/([A-Za-z&\s]+)\s+(\d+)/g)];
+  return pairs.map(p => ({ name: p[1].trim(), value: Number(p[2]) }));
+}
+
+async function scrapeWcuFromPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  // cari option dari <script>
+  const opt = extractEchartsOptionFromScripts($, 'wcu_overview1');
+  const fromOpt = readCategoryValueSeries(opt);
+  if (fromOpt) {
+    return { ...fromOpt, optionSource: 'echarts' };
+  }
+
+  // fallback tooltip
+  const fromTip = parseWcuTooltip($, '#wcu_overview1');
+  if (fromTip) {
+    return { ...fromTip, optionSource: 'tooltip' };
+  }
+
+  return { categories: [], data: [], seriesName: '', optionSource: 'none' };
+}
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+async function scrapeWcuWithBrowser(url, { timeoutMs = 45000, extraWaitMs = 800 } = {}) {
+  const browser = await puppeteer.launch({
+    headless: true, // boolean agar kompatibel versi lama
+    args: ['--no-sandbox','--disable-setuid-sandbox']
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+    );
+
+    // Lebih toleran: coba networkidle0, fallback ke domcontentloaded + sleep
+    try {
+      await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
+    } catch {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      await sleep(1500);
+    }
+
+    // Scroll separuh halaman untuk memicu render lazy/tab
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
+    if (extraWaitMs > 0) await sleep(extraWaitMs);
+
+    // Pastikan elemen ada (jangan fail hard)
+    try { await page.waitForSelector('#wcu_overview1', { timeout: Math.min(8000, timeoutMs) }); } catch {}
+
+    // Polling getOption beberapa kali (data sering datang sedikit terlambat)
+    const maxTry = 6;
+    for (let i = 0; i < maxTry; i++) {
+      const res = await page.evaluate(() => {
+        function pickAxis(axis){
+          if (!axis) return [];
+          if (Array.isArray(axis)) return axis[0]?.data || [];
+          return axis.data || [];
+        }
+        function toStr(x){ return x==null ? '' : String(x); }
+        function toNum(x){ return (x==null || x==='') ? null : Number(x); }
+
+        const el = document.getElementById('wcu_overview1');
+        // eslint-disable-next-line no-undef
+        const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
+        if (!inst) return { categories: [], data: [], seriesName: '' };
+
+        const opt = inst.getOption() || {};
+        let categories = pickAxis(opt.xAxis);
+        if (!categories.length) categories = pickAxis(opt.yAxis);
+        categories = categories.map(toStr);
+
+        const seriesArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+        const first = seriesArr.find(s => Array.isArray(s.data)) || {};
+        const data = (first.data || []).map(toNum);
+        const seriesName = toStr(first.name);
+
+        return { categories, data, seriesName };
+      });
+
+      if ((res.categories?.length || 0) && (res.data?.length || 0)) {
+        return { ...res, optionSource: 'echarts' };
+      }
+      await sleep(500 + i * 200);
+    }
+
+    // Optional: coba “nudge” dengan resize lalu sekali lagi
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+    await sleep(600);
+    const retry = await page.evaluate(() => {
+      function pickAxis(axis){
+        if (!axis) return [];
+        if (Array.isArray(axis)) return axis[0]?.data || [];
+        return axis.data || [];
+      }
+      const el = document.getElementById('wcu_overview1');
+      // eslint-disable-next-line no-undef
+      const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
+      if (!inst) return { categories: [], data: [], seriesName: '' };
+      const opt = inst.getOption() || {};
+      let categories = pickAxis(opt.xAxis);
+      if (!categories.length) categories = pickAxis(opt.yAxis);
+      categories = categories.map(String);
+      const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+      const first = sArr.find(s => Array.isArray(s.data)) || {};
+      const data = (first.data || []).map(v => v==null ? null : Number(v));
+      return { categories, data, seriesName: String(first.name || '') };
+    });
+
+    return { ...retry, optionSource: (retry.categories.length && retry.data.length) ? 'echarts' : 'none' };
+  } finally {
+    await browser.close();
+  }
+}
+
+
+async function getAffiliationWcu(affiliationId, { engine = 'auto' } = {}) {
+  const forceBrowser = String(engine).toLowerCase() === 'browser';
+  let lastErr;
+  for (const url of buildAffiliationWcuUrls(affiliationId)) {
+    try {
+      if (!forceBrowser) {
+        const data = await scrapeWcuFromPage(url);
+        if ((data.categories?.length || 0) && (data.data?.length || 0)) {
+          return { source: url, ...data };
+        }
+      }
+      // headless
+      const data2 = await scrapeWcuWithBrowser(url);
+      return { source: url, ...data2 };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw new Error(`Gagal mengambil WCU analysis: ${lastErr?.message || 'unknown error'}`);
+}
+
+
+module.exports = {getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
