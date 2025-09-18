@@ -875,177 +875,263 @@ async function getAuthorActivity(authorId, { view = '', engine = 'auto' } = {}) 
   throw new Error(`Gagal mengambil activity author: ${lastErr?.message || 'unknown error'}`);
 }
 
+// Tambahan util: aman untuk JSON5
+// const JSON5 = require('json5');
 
+// ====== LOOSE EXTRACTOR untuk ECharts option (non-chaining) ======
+function extractEchartsOptionLoose($, containerId) {
+  const scripts = Array.from($('script')).map(s => $(s).html() || '');
+  const idPat = containerId.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
-function buildAffiliationWcuUrls(affiliationId) {
-  return DOMAINS.map(base => `${base}/affiliations/wcuanalysis/${affiliationId}`);
+  // 1) Temukan blok yang mengaitkan element id dengan chart + setOption(varName)
+  //    ...getElementById('wcu_overview1') ... setOption(option_wcu_overview1)
+  const setOptRe = new RegExp(
+    `getElementById\\(['"]${idPat}['"]\\)[\\s\\S]*?setOption\\s*\\(\\s*([A-Za-z0-9_\\$]+)\\s*\\)`,
+    'm'
+  );
+
+  // 2) Dari varName di atas, cari assignment varName = { ... };
+  function findOptionObject(code, optVar) {
+    // Paling sederhana: cari "optVar = { ... };" pertama
+    // NB: gunakan non-greedy { ... } dan akhiri pada "};"
+    const assignRe = new RegExp(`${optVar}\\s*=\\s*(\\{[\\s\\S]*?\\});`, 'm');
+    const m = code.match(assignRe);
+    return m ? m[1] : null;
+  }
+
+  for (const code of scripts) {
+    const m = code.match(setOptRe);
+    if (!m) continue;
+    const optVar = m[1]; // contoh: option_wcu_overview1
+    // Coba cari dalam script yang sama terlebih dulu
+    let objText = findOptionObject(code, optVar);
+    if (!objText) {
+      // kalau tidak ketemu, scan semua script (kadang dipisah)
+      for (const code2 of scripts) {
+        objText = findOptionObject(code2, optVar);
+        if (objText) break;
+      }
+    }
+    if (objText) {
+      try {
+        return JSON5.parse(objText);
+      } catch { /* lanjut */ }
+    }
+  }
+  return null;
 }
-function readCategoryValueSeries(option) {
-  if (!option) return null;
 
-  const pickAxis = (axis) => {
-    if (!axis) return [];
-    if (Array.isArray(axis)) return axis[0]?.data || [];
-    return axis.data || [];
-  };
-
-  let categories = pickAxis(option.xAxis);
-  if (!categories?.length) categories = pickAxis(option.yAxis);
-  categories = (categories || []).map(s => String(s));
-
-  const seriesArr = Array.isArray(option.series) ? option.series : (option.series ? [option.series] : []);
-  const usable = seriesArr.find(s => Array.isArray(s.data));
-  const data = (usable?.data || []).map(v => (v == null ? null : Number(v)));
-
-  if (!categories.length || !data.length) return null;
-
-  return {
-    categories,
-    data,
-    seriesName: String(usable?.name ?? '')
-  };
-}
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function parseWcuTooltip($) {
-  const tooltip = $('#wcu_overview1').find('div[style*="position: absolute"]').last().text();
-  const pairs = [...tooltip.matchAll(/([A-Za-z&\s]+)\s+(\d+)/g)];
-  return pairs.map(p => ({ name: p[1].trim(), value: Number(p[2]) }));
-}
-
+// ====== Update scraper WCU dari HTML ======
 async function scrapeWcuFromPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
-  // cari option dari <script>
-  const opt = extractEchartsOptionFromScripts($, 'wcu_overview1');
-  const fromOpt = readCategoryValueSeries(opt);
-  if (fromOpt) {
-    return { ...fromOpt, optionSource: 'echarts' };
+  // 1) coba pattern chaining biasa (kalau-kalau ada)
+  let opt = extractEchartsOptionFromScripts($, 'wcu_overview1');
+  // 2) kalau gagal, coba loose extractor (non-chaining setOption(var))
+  if (!opt) opt = extractEchartsOptionLoose($, 'wcu_overview1');
+
+  // 3) Parse radar -> { categories, data }
+  let categories = [];
+  let data = [];
+  if (opt) {
+    const radar = Array.isArray(opt.radar) ? opt.radar[0] : opt.radar;
+    const indicators = radar?.indicator || [];
+    const seriesArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+    const first = seriesArr.find(s => (s.type || '').toLowerCase() === 'radar' && Array.isArray(s.data));
+    const vals = first?.data?.[0]?.value || [];
+    categories = indicators.map((it, i) => String(it.text || it.name || `dim_${i+1}`));
+    data = vals.map(v => Number(v ?? 0));
   }
 
-  // fallback tooltip
-  const fromTip = parseWcuTooltip($, '#wcu_overview1');
-  if (fromTip) {
-    return { ...fromTip, optionSource: 'tooltip' };
+  // 4) Fallback terakhir: tooltip (jika suatu saat ada)
+  if ((!categories.length || !data.length) && $('#wcu_overview1').length) {
+    const t = $('#wcu_overview1').find('div[style*="position: absolute"]').last().text();
+    // misal: "Arts & Humanities 0 ... Engineering & Technology 84 ..."
+    const pairs = [...t.matchAll(/([A-Za-z&\\s]+)\\s+(\\d+)/g)];
+    if (pairs.length) {
+      categories = pairs.map(p => p[1].trim());
+      data = pairs.map(p => Number(p[2]));
+    }
   }
 
-  return { categories: [], data: [], seriesName: '', optionSource: 'none' };
+  return { categories, data };
 }
-function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
-async function scrapeWcuWithBrowser(url, { timeoutMs = 45000, extraWaitMs = 800 } = {}) {
-  const browser = await puppeteer.launch({
-    headless: true, // boolean agar kompatibel versi lama
-    args: ['--no-sandbox','--disable-setuid-sandbox']
+
+
+async function collectEchartsCategorySeriesFromFrame(frame) {
+  return await frame.evaluate(() => {
+    function pickAxis(axis){
+      if (!axis) return [];
+      if (Array.isArray(axis)) return axis[0]?.data || [];
+      return axis.data || [];
+    }
+    function toStr(x){ return x==null ? '' : String(x); }
+    function toNum(x){ return (x==null || x==='') ? null : Number(x); }
+
+    const out = [];
+    const candidates = document.querySelectorAll('[id][_echarts_instance_], #wcu_overview1');
+    for (const el of candidates) {
+      const id = el.id || '';
+      // eslint-disable-next-line no-undef
+      const inst = (window.echarts && window.echarts.getInstanceByDom) ? window.echarts.getInstanceByDom(el) : null;
+      if (!inst) continue;
+
+      const opt = inst.getOption() || {};
+      const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+      const first = sArr.find(s => Array.isArray(s.data));
+      if (!first) continue;
+
+      let cats = pickAxis(opt.xAxis);
+      if (!cats?.length) cats = pickAxis(opt.yAxis);
+      cats = (cats || []).map(toStr);
+      const vals = (first.data || []).map(toNum);
+
+      out.push({ id, categories: cats, data: vals, seriesName: toStr(first.name || '') });
+    }
+    return out;
   });
+}
+
+function pickBestSubjectChart(cands) {
+  if (!cands.length) return null;
+  // pilih chart dengan kategori terbanyak
+  return cands.sort((a,b)=>(b.categories.length)-(a.categories.length))[0];
+}
+
+async function collectEchartsRadarFromFrame(frame) {
+  return await frame.evaluate(() => {
+    function toStr(x){ return x==null ? '' : String(x); }
+    function toNum(x){ return (x==null || x==='') ? null : Number(x); }
+
+    const out = [];
+    const els = Array.from(document.querySelectorAll('[id][_echarts_instance_], #wcu_overview1'));
+    for (const el of els) {
+      const id = el.id || '';
+      // eslint-disable-next-line no-undef
+      const inst = (window.echarts && window.echarts.getInstanceByDom) ? window.echarts.getInstanceByDom(el) : null;
+      if (!inst) continue;
+
+      const opt = inst.getOption() || {};
+      const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+      // cari seri radar
+      const radarSeries = sArr.find(s => toStr(s.type).toLowerCase() === 'radar' && Array.isArray(s.data));
+      if (!radarSeries) continue;
+
+      // indikator bisa di opt.radar atau opt.radar[0]
+      const radar = Array.isArray(opt.radar) ? opt.radar[0] : opt.radar;
+      const indicators = (radar && radar.indicator) || [];
+      const categories = indicators.map((it, i) => toStr(it.text || it.name || `dim_${i+1}`));
+
+      const vals = (radarSeries.data?.[0]?.value || []).map(toNum);
+      out.push({ id, categories, data: vals, seriesName: toStr(radarSeries.name || 'Subject Area') });
+    }
+    return out;
+  });
+}
+
+function pickBestRadarChart(cands) {
+  if (!cands?.length) return null;
+  let best = null, bestScore = -1;
+  for (const c of cands) {
+    const cats = c.categories || [];
+    const vals = c.data || [];
+    // prefer 5 ± 0 (beri toleransi 4–8)
+    const n = cats.length;
+    let score = (n === 5 ? 10 : (n >= 4 && n <= 8 ? 6 : 0));
+    // keyword subject area
+    const txt = cats.join(' ').toLowerCase();
+    if (/arts/.test(txt)) score += 2;
+    if (/engineering/.test(txt)) score += 2;
+    if (/natural/.test(txt)) score += 2;
+    if (/life/.test(txt)) score += 2;
+    if (/social/.test(txt)) score += 2;
+    // ada angka non-null
+    if (vals.some(v => typeof v === 'number')) score += 1;
+
+    if (score > bestScore) { best = c; bestScore = score; }
+  }
+  return best || null;
+}
+
+async function scrapeWcuWithBrowserAutoDetect(url, { timeoutMs = 45000 } = {}) {
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox','--disable-setuid-sandbox'] });
   try {
     const page = await browser.newPage();
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-    );
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // Lebih toleran: coba networkidle0, fallback ke domcontentloaded + sleep
     try {
       await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
     } catch {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-      await sleep(1500);
+      await new Promise(r => setTimeout(r, 1200));
     }
 
-    // Scroll separuh halaman untuk memicu render lazy/tab
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-    if (extraWaitMs > 0) await sleep(extraWaitMs);
+    // pastikan tab overview aktif + render terpancing
+    try { await page.evaluate(() => { const t=document.querySelector('[href="#overview1"]'); if (t) t.click(); }); } catch {}
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight/2));
+    await new Promise(r => setTimeout(r, 800));
 
-    // Pastikan elemen ada (jangan fail hard)
-    try { await page.waitForSelector('#wcu_overview1', { timeout: Math.min(8000, timeoutMs) }); } catch {}
+    // 1) Kumpulkan radar dulu (main frame)
+    let radarCands = await collectEchartsRadarFromFrame(page.mainFrame());
 
-    // Polling getOption beberapa kali (data sering datang sedikit terlambat)
-    const maxTry = 6;
-    for (let i = 0; i < maxTry; i++) {
-      const res = await page.evaluate(() => {
-        function pickAxis(axis){
-          if (!axis) return [];
-          if (Array.isArray(axis)) return axis[0]?.data || [];
-          return axis.data || [];
-        }
-        function toStr(x){ return x==null ? '' : String(x); }
-        function toNum(x){ return (x==null || x==='') ? null : Number(x); }
-
-        const el = document.getElementById('wcu_overview1');
-        // eslint-disable-next-line no-undef
-        const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
-        if (!inst) return { categories: [], data: [], seriesName: '' };
-
-        const opt = inst.getOption() || {};
-        let categories = pickAxis(opt.xAxis);
-        if (!categories.length) categories = pickAxis(opt.yAxis);
-        categories = categories.map(toStr);
-
-        const seriesArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
-        const first = seriesArr.find(s => Array.isArray(s.data)) || {};
-        const data = (first.data || []).map(toNum);
-        const seriesName = toStr(first.name);
-
-        return { categories, data, seriesName };
-      });
-
-      if ((res.categories?.length || 0) && (res.data?.length || 0)) {
-        return { ...res, optionSource: 'echarts' };
-      }
-      await sleep(500 + i * 200);
+    // 2) Coba resize kalau belum ada
+    if (!radarCands.length) {
+      await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+      await new Promise(r => setTimeout(r, 600));
+      radarCands = await collectEchartsRadarFromFrame(page.mainFrame());
     }
 
-    // Optional: coba “nudge” dengan resize lalu sekali lagi
-    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
-    await sleep(600);
-    const retry = await page.evaluate(() => {
-      function pickAxis(axis){
-        if (!axis) return [];
-        if (Array.isArray(axis)) return axis[0]?.data || [];
-        return axis.data || [];
+    // 3) (Opsional) jelajahi iframe juga
+    if (!radarCands.length) {
+      const frames = page.frames().filter(f => f !== page.mainFrame());
+      for (const f of frames) {
+        try {
+          const rc = await collectEchartsRadarFromFrame(f);
+          radarCands = radarCands.concat(rc);
+        } catch {}
       }
-      const el = document.getElementById('wcu_overview1');
-      // eslint-disable-next-line no-undef
-      const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
-      if (!inst) return { categories: [], data: [], seriesName: '' };
-      const opt = inst.getOption() || {};
-      let categories = pickAxis(opt.xAxis);
-      if (!categories.length) categories = pickAxis(opt.yAxis);
-      categories = categories.map(String);
-      const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
-      const first = sArr.find(s => Array.isArray(s.data)) || {};
-      const data = (first.data || []).map(v => v==null ? null : Number(v));
-      return { categories, data, seriesName: String(first.name || '') };
-    });
+    }
 
-    return { ...retry, optionSource: (retry.categories.length && retry.data.length) ? 'echarts' : 'none' };
+    const pickRadar = pickBestRadarChart(radarCands);
+    if (pickRadar) {
+      return {
+        categories: pickRadar.categories,
+        data: pickRadar.data,
+        seriesName: pickRadar.seriesName || 'Subject Area',
+        optionSource: 'echarts-radar',
+        chartId: pickRadar.id || null
+      };
+    }
+
+    // Fallback terakhir: (kalau memang tidak ada radar),
+    // bisa panggil kolektor cartesian lama — tapi kita TIDAK kembalikan itu untuk WCU
+    return { categories: [], data: [], seriesName: '', optionSource: 'none' };
   } finally {
     await browser.close();
   }
 }
 
 
-async function getAffiliationWcu(affiliationId, { engine = 'auto' } = {}) {
-  const forceBrowser = String(engine).toLowerCase() === 'browser';
+async function getAffiliationWcu(affiliationId, { engine='auto' } = {}) {
   let lastErr;
-  for (const url of buildAffiliationWcuUrls(affiliationId)) {
+  for (const base of DOMAINS) {
+    const url = `${base}/affiliations/wcuanalysis/${affiliationId}`;
     try {
-      if (!forceBrowser) {
+      if (engine !== 'browser') {
         const data = await scrapeWcuFromPage(url);
         if ((data.categories?.length || 0) && (data.data?.length || 0)) {
           return { source: url, ...data };
         }
       }
-      // headless
-      const data2 = await scrapeWcuWithBrowser(url);
+      const data2 = await scrapeWcuWithBrowserAutoDetect(url);
       return { source: url, ...data2 };
-    } catch (e) {
-      lastErr = e;
-    }
+    } catch (e) { lastErr = e; }
   }
   throw new Error(`Gagal mengambil WCU analysis: ${lastErr?.message || 'unknown error'}`);
 }
+
 
 
 module.exports = {getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
