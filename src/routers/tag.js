@@ -1,8 +1,9 @@
 const { Router } = require("express");
-const { Tag } = require("../databases/models"); // pastikan path sesuai
+const { Tag } = require("../models"); // pastikan path sesuai
 const ApiResponse = require("../utils/api_response");
 const HttpStatus = require("../utils/http_status");
-const ApiError = require("../utils/api_error");
+const ApiError = require("./../utils/api_error");
+const paginate = require("../utils/paginate");
 
 const routers = Router();
 
@@ -11,7 +12,7 @@ const routers = Router();
  * POST /tags
  * body: { name: "tagName", status: "1" }
  */
-routers.post("/tag", async (req, res, next) => {
+routers.post("/", async (req, res, next) => {
   try {
     const { name, status } = req.body;
 
@@ -39,7 +40,7 @@ routers.post("/tag", async (req, res, next) => {
  * PUT /tags/:name
  * body: { newName?: "newName", status?: "0" }
  */
-routers.put("/tag/:name", async (req, res, next) => {
+routers.put("/:name", async (req, res, next) => {
   try {
     const { name } = req.params;
     const { newName, status } = req.body;
@@ -72,7 +73,7 @@ routers.put("/tag/:name", async (req, res, next) => {
  * 3. Get sebuah tag
  * GET /tags/:name
  */
-routers.get("/tag/:name", async (req, res, next) => {
+routers.get("/:name", async (req, res, next) => {
   try {
     const { name } = req.params;
 
@@ -91,7 +92,7 @@ routers.get("/tag/:name", async (req, res, next) => {
  * 4. Get seluruh tag
  * GET /tags
  */
-routers.get("/tag", async (req, res, next) => {
+routers.get("/", async (req, res, next) => {
   try {
     const result = await paginate(
       Tag,

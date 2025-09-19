@@ -4,7 +4,7 @@ const { databaseConfig } = require("../config/database.js")
 
 const config = databaseConfig[env("APP_ENV") || "development"]
 const sequelize = new Sequelize(
-  config.NAME,
+  config.DATABASE,
   config.USERNAME,
   config.PASSWORD,
   {
@@ -20,7 +20,8 @@ db.Sequelize = Sequelize
 db.sequelize = sequelize
 
 // Import semua model di sini
-db.User = require("./user.js")(sequelize, Sequelize.DataTypes)
+db.Tag = require("./tag.js")(sequelize, Sequelize.DataTypes)
+db.Periode = require("./periode.js")(sequelize, Sequelize.DataTypes)
 
 
 module.exports = db

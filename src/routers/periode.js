@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { Periode } = require("../databases/models"); // pastikan path sesuai
+const { Periode } = require("../models"); // pastikan path sesuai
 const ApiResponse = require("../utils/api_response");
 const HttpStatus = require("../utils/http_status");
 const ApiError = require("../utils/api_error");

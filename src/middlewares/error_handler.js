@@ -1,5 +1,5 @@
-const ApiResponse = require("../utils/ApiResponse");
-const HttpStatus = require("../utils/httpStatus");
+const ApiResponse = require("../utils/api_response");
+const HttpStatus = require("../utils/http_status");
 
 function globalErrorHandler(err, req, res, next) {
   console.error("❌ Global Error Handler:", err);
