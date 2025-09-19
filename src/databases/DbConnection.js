@@ -1,14 +1,14 @@
 const { Sequelize } = require("sequelize")
 const env = require("../config/env.js")
-const database = require("../config/database.js")
+const { databaseConfig } = require("../config/database.js")
 
-const databaseConfig = database[env("APP_ENV") || "development"]
+const config = databaseConfig[env("APP_ENV") || "development"]
 const sequelizeConnection = new Sequelize(
-  databaseConfig.NAME,
-  databaseConfig.USERNAME,
-  databaseConfig.PASSWORD,
+  config.NAME,
+  config.USERNAME,
+  config.PASSWORD,
   {
-    host: databaseConfig.HOST,
+    host: config.HOST,
     dialect: "mysql",
     logging: false,
   }

@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "db:create": "node src/scripts/create_database.js",
+    "db:migrate": "npx sequelize-cli db:migrate",
+    "db:reset": "npm run db:create && npm run db:migrate"
   },
   "repository": {
     "type": "git",
@@ -34,6 +37,7 @@
     "node-cron": "^4.2.1",
     "nodemon": "^3.1.10",
     "puppeteer": "^24.20.0",
-    "sequelize": "^6.37.7"
+    "sequelize": "^6.37.7",
+    "sequelize-cli": "^6.6.3"
   }
 }

@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require("cookie-parser")
 const cors = require("cors")
 const env = require("./config/env")
+const globalErrorHandler = require("./middlewares/error_handler")
 
 const app = express();
 
@@ -39,5 +40,7 @@ if (env("APP_ENV") === 'development') {
 app.use(cors());
 
 app.use("/api/v1", routers);
+
+app.use(globalErrorHandler)
 
 module.exports = app;

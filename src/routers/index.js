@@ -1,9 +1,12 @@
 const { Router } = require("express");
 const scrappingRouter = require("./scrapping");
-const {getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
+const tagRouter = require("./tag.js");
+const periodeRouter = require("./periode.js");
 
 const routers = Router()
 
 routers.use('/scrapping', scrappingRouter) 
+routers.use('/tag', tagRouter) 
+routers.use('/periode', periodeRouter) 
 
 module.exports = routers;
