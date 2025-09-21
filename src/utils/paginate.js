@@ -19,7 +19,7 @@ async function paginate(model, query = {}, options = {}, searchableFields = []) 
     where = {
       ...where,
       [Op.or]: searchableFields.map((field) => ({
-        [field]: { [Op.iLike]: searchValue }, // pakai Op.like kalau MySQL
+        [field]: { [Op.like]: searchValue }, // pakai Op.like kalau MySQL
       })),
     };
   }

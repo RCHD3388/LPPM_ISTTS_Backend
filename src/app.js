@@ -14,7 +14,7 @@ const app = express();
 // Use a conservative rate limit (adjust as needed)
 app.use(rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 20,             // 20 requests per minute
+  max: 1000,             // 20 requests per minute
   standardHeaders: true,
   legacyHeaders: false
 }));

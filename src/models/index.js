@@ -22,6 +22,7 @@ db.sequelize = sequelize
 // Import semua model di sini
 db.Tag = require("./tag.js")(sequelize, Sequelize.DataTypes)
 db.Periode = require("./periode.js")(sequelize, Sequelize.DataTypes)
+db.Bank = require("./bank.js")(sequelize, Sequelize.DataTypes)
 
 
 module.exports = db

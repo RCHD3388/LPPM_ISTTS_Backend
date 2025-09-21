@@ -2,13 +2,13 @@
 const { Model } = require('sequelize')
 
 module.exports = (sequelize, DataTypes) => {
-  class Periode extends Model {
+  class Bank extends Model {
     static associate(models) {
     
     }
   }
 
-  Periode.init(
+  Bank.init(
     {
       id: {
         primaryKey: true,
@@ -16,8 +16,12 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false,
       },
-      name: {
+      kode: {
         unique: true,
+        type: DataTypes.STRING,
+        allowNull: false,
+      },
+      name: {
         type: DataTypes.STRING,
         allowNull: false,
       },
@@ -29,11 +33,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: 'Periode',
-      tableName: 'Periode',
+      modelName: 'Bank',
+      tableName: 'Bank',
       timestamps: false, // karena migration kamu tidak punya createdAt & updatedAt
     }
   )
 
-  return Periode
+  return Bank
 }
