@@ -10,11 +10,6 @@ module.exports = {
         allowNull: false,
         autoIncrement: true
       },
-      kode: {
-        type: Sequelize.STRING,
-        unique: true,
-        allowNull: false
-      },
       name: {
         type: Sequelize.STRING,
         allowNull: false

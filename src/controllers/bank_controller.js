@@ -8,21 +8,14 @@ const addOne =async (req, res, next) => {
   try {
     const { name, status } = req.body;
 
-    if(kode == null){
-      throw new ApiError(HttpStatus.BAD_REQUEST, "Bank code cannot be empty");
-    }
-    if(name == null){
-      throw new ApiError(HttpStatus.BAD_REQUEST, "Bank name cannot be empty");
-    }
-
     // cek apakah name sudah ada
     const exists = await Bank.findOne({
       where: {
-        kode,
+        name,
       },
     });
     if (exists) {
-      throw new ApiError(HttpStatus.CONFLICT, "Bank code already exists");
+      throw new ApiError(HttpStatus.CONFLICT, "Bank name already exists");
     }
 
     const bank = await Bank.create({
@@ -41,7 +34,7 @@ const addOne =async (req, res, next) => {
 const editOne = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { kode, name, status } = req.body;
+    const { name, status } = req.body;
 
     const bank = await Bank.findByPk(id);
     if (!bank) {
@@ -49,19 +42,18 @@ const editOne = async (req, res, next) => {
     }
 
     // cek duplikasi name baru
-    if (kode && bank.name !== kode) {
+    if (name && bank.name !== name) {
       const exists = await Bank.findOne({
         where: {
-          kode: kode,
+          name: name,
         },
       });
       if (exists) {
         throw new ApiError(HttpStatus.CONFLICT, "New bank name already exists");
       }
-      bank.kode = kode;
+      bank.name = name;
     }
 
-    if (name) bank.name = name;
     if (status) bank.status = status;
 
     await bank.save();
@@ -93,7 +85,7 @@ const getAll = async (req, res, next) => {
       Bank,
       req.query,
       {}, // opsional: where, include, dll
-      ["name", "kode"] // field yang bisa dicari dengan LIKE
+      ["name"] // field yang bisa dicari dengan LIKE
     );
 
     // console.log(result.meta)
