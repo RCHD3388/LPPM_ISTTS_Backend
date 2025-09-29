@@ -23,6 +23,8 @@ db.sequelize = sequelize
 db.Tag = require("./tag.js")(sequelize, Sequelize.DataTypes)
 db.Periode = require("./periode.js")(sequelize, Sequelize.DataTypes)
 db.Bank = require("./bank.js")(sequelize, Sequelize.DataTypes)
+db.FilePenting = require("./file_penting.js")(sequelize, Sequelize.DataTypes)
+db.Lampiran = require("./lampiran.js")(sequelize, Sequelize.DataTypes)
 
 
 module.exports = db
