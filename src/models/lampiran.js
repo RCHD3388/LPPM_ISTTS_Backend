@@ -16,19 +16,26 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false,
       },
-      lampiran: {
+      name_lampiran: {
         type: DataTypes.STRING,
         allowNull: false
       },
-      tipe: {
+      sumber_lampiran: { // untuk link / path file
         type: DataTypes.STRING,
         allowNull: false
       },
-      tanggal: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
+      tipe_lampiran: { // untuk File Penting / Pengumuman
+        type: DataTypes.STRING,
         allowNull: false
       },
+      jenis_lampiran: { // untuk link / url
+        type: DataTypes.STRING,
+        allowNull: false
+      },
+      sumber_id: { // untuk simpen id dari file penting atau pengumuman
+        type: DataTypes.INTEGER,
+        allowNull: false
+      }
     },
     {
       sequelize,

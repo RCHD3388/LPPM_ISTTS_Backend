@@ -3,7 +3,7 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.createTable('FilePenting', {
+    await queryInterface.createTable('Pengumuman', {
       id: {
         type: Sequelize.INTEGER,
         primaryKey: true,
@@ -12,6 +12,14 @@ module.exports = {
       },
       judul: {
         type: Sequelize.STRING,
+        allowNull: false
+      },
+      isi: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      jumlah_lampiran: {
+        type: Sequelize.INTEGER,
         allowNull: false
       },
       tag_id: {
@@ -25,6 +33,6 @@ module.exports = {
     })
 },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('FilePenting');
+    await queryInterface.dropTable('Pengumuman');
   }
 };

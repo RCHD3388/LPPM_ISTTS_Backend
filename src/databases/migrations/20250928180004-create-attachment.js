@@ -10,22 +10,29 @@ module.exports = {
         allowNull: false,
         autoIncrement: true
       },
-      lampiran: {
+      name_lampiran: {
         type: Sequelize.STRING,
         allowNull: false
       },
-      tipe: {
+      sumber_lampiran: {
         type: Sequelize.STRING,
         allowNull: false
       },
-      tanggal: {
-        type: Sequelize.DATE,
-        defaultValue: Sequelize.NOW,
+      tipe_lampiran: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      jenis_lampiran: {
+        type: Sequelize.STRING,
+        allowNull: false
+      },
+      sumber_id: {
+        type: Sequelize.INTEGER,
         allowNull: false
       },
     })
 },
   async down(queryInterface, Sequelize) {
-    await queryInterface.dropTable('Attachment');
+    await queryInterface.dropTable('Lampiran');
   }
 };
