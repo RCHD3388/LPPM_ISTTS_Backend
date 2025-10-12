@@ -81,10 +81,15 @@ const getOneById = async (req, res, next) => {
 
 const getAll = async (req, res, next) => {
   try {
+    const whereOptions = {};
+    if(req.query.status){
+      whereOptions.status = req.query.status;
+    }
+    
     const result = await paginate(
       Tag,
       req.query,
-      {}, // opsional: where, include, dll
+      {where: whereOptions}, // opsional: where, include, dll
       ["name"] // field yang bisa dicari dengan LIKE
     );
 
