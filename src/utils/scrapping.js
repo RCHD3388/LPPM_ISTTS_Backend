@@ -852,27 +852,75 @@ async function scrapeActivityAuto(url, { engine = 'auto' } = {}) {
   return await scrapeActivityWithBrowser(url);
 }
 
-async function getAffiliationActivity(affiliationId, { view = '', engine = 'auto' } = {}) {
-  let lastErr;
-  for (const url of buildAffiliationActivityUrls(affiliationId, view)) {
-    try {
-      const data = await scrapeActivityAuto(url, { engine });
-      // pastikan struktur selalu konsisten
-      return { source: url, view: normalizeActivityView(view), ...data };
-    } catch (e) { lastErr = e; }
+// ==== Ambil SEMUA view ('' | researches | services) ====
+async function getAffiliationActivity(affiliationId, { engine = 'auto' } = {}) {
+  const views = ['', 'researches', 'services'];
+  const results = [];
+
+  for (const v of views) {
+    let lastErr;
+    for (const url of buildAffiliationActivityUrls(affiliationId, v)) {
+      try {
+        const data = await scrapeActivityAuto(url, { engine });
+        results.push({
+          source: url,
+          view: normalizeActivityView(v),
+          ...data
+        });
+        break; // sukses satu domain -> lanjut ke view berikutnya
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (lastErr && !results.find(r => r.view === v)) {
+      results.push({
+        view: normalizeActivityView(v),
+        error: lastErr.message
+      });
+    }
   }
-  throw new Error(`Gagal mengambil activity affiliation: ${lastErr?.message || 'unknown error'}`);
+
+  return {
+    ok: true,
+    affiliationId,
+    engine,
+    data: results
+  };
 }
 
-async function getAuthorActivity(authorId, { view = '', engine = 'auto' } = {}) {
-  let lastErr;
-  for (const url of buildAuthorActivityUrls(authorId, view)) {
-    try {
-      const data = await scrapeActivityAuto(url, { engine });
-      return { source: url, view: normalizeActivityView(view), ...data };
-    } catch (e) { lastErr = e; }
+async function getAuthorActivity(authorId, { engine = 'auto' } = {}) {
+  const views = ['', 'researches', 'services'];
+  const results = [];
+
+  for (const v of views) {
+    let lastErr;
+    for (const url of buildAuthorActivityUrls(authorId, v)) {
+      try {
+        const data = await scrapeActivityAuto(url, { engine });
+        results.push({
+          source: url,
+          view: normalizeActivityView(v),
+          ...data
+        });
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (lastErr && !results.find(r => r.view === v)) {
+      results.push({
+        view: normalizeActivityView(v),
+        error: lastErr.message
+      });
+    }
   }
-  throw new Error(`Gagal mengambil activity author: ${lastErr?.message || 'unknown error'}`);
+
+  return {
+    ok: true,
+    authorId,
+    engine,
+    data: results
+  };
 }
 
 // Tambahan util: aman untuk JSON5
@@ -1132,6 +1180,116 @@ async function getAffiliationWcu(affiliationId, { engine='auto' } = {}) {
   throw new Error(`Gagal mengambil WCU analysis: ${lastErr?.message || 'unknown error'}`);
 }
 
+async function getAffiliationDepartments(affiliationId) {
+  const base = 'https://sinta.kemdiktisaintek.go.id';
+  const url = `${base}/affiliations/departments/${affiliationId}`;
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  // Ambil semua <a> di dalam .tbl-content-name
+  const departments = [];
+  $('.tbl-content-name > a[href*="/departments/profile/"]').each((_, el) => {
+    const name = $(el).text().trim();
+    const href = $(el).attr('href');
+    if (href && name) {
+      departments.push({
+        name,
+        url: href.startsWith('http') ? href : base + href
+      });
+    }
+  });
+
+  return { source: url, total: departments.length, departments };
+}
+// === Scrape 1 halaman ===
+async function scrapeAuthorsPage(affiliationId, page = 1) {
+  const baseUrl = `https://sinta.kemdiktisaintek.go.id/affiliations/authors/${affiliationId}?page=${page}`;
+  const html = await fetchHtml(baseUrl);
+  const $ = cheerio.load(html);
+
+  const authors = [];
+
+  $(".au-item").each((_, el) => {
+    const $el = $(el);
+    const nameEl = $el.find(".profile-name a[href*='/authors/profile/']");
+    const name = nameEl.text().trim();
+    const authorUrl = nameEl.attr("href");
+
+    // ambil gambar profil (jika ada)
+    const imgEl = $el.find("img.avatar, img.img-thumbnail").first();
+    const imageUrl = imgEl.attr("src") || null;
+
+    const deptEl = $el.find(".profile-dept a[href*='/departments/profile/']");
+    const deptName = deptEl.text().replace(/\s+/g, " ").trim();
+    const deptUrl = deptEl.attr("href");
+
+    const idMatch = $el.find(".profile-id:contains('ID')").text().match(/ID\s*:\s*(\d+)/);
+    const authorId = idMatch ? idMatch[1] : null;
+
+    const scopusH = parseInt(
+      $el.find(".profile-hindex .text-warning").text().replace(/\D+/g, "") || 0
+    );
+    const gsH = parseInt(
+      $el.find(".profile-hindex .text-success").text().replace(/\D+/g, "") || 0
+    );
+
+    const scores = {};
+    $el.find(".stat-text").each((_, st) => {
+      const label = $(st).text().trim();
+      const val = $(st).prev(".stat-num").text().trim();
+      scores[label] = Number(val.replace(/\D+/g, "")) || 0;
+    });
+
+    authors.push({
+      name,
+      authorId,
+      authorUrl,
+      imageUrl, // ⬅️ tambahkan di sini
+      department: { name: deptName, url: deptUrl },
+      scopusHIndex: scopusH,
+      gsHIndex: gsH,
+      sintaScore3Yr: scores["SINTA Score 3Yr"] || 0,
+      sintaScoreOverall: scores["SINTA Score"] || 0,
+      affilScore3Yr: scores["Affil Score 3Yr"] || 0,
+      affilScoreOverall: scores["Affil Score"] || 0,
+    });
+  });
+
+  // Ambil info pagination
+  const pageText = $(".pagination-text small").text();
+  const match = pageText.match(/Page\s+(\d+)\s+of\s+(\d+)/i);
+  const currentPage = match ? parseInt(match[1]) : page;
+  const totalPages = match ? parseInt(match[2]) : 1;
+
+  return { authors, currentPage, totalPages, source: baseUrl };
+}
+
+// === Scrape Semua Halaman ===
+async function scrapeAllAuthors(affiliationId) {
+  const first = await scrapeAuthorsPage(affiliationId, 1);
+  const allAuthors = [...first.authors];
+  const totalPages = first.totalPages;
+
+  if (totalPages > 1) {
+    for (let p = 2; p <= totalPages; p++) {
+      try {
+        console.log(`Fetching page ${p} of ${totalPages}...`);
+        const next = await scrapeAuthorsPage(affiliationId, p);
+        allAuthors.push(...next.authors);
+      } catch (err) {
+        console.warn(`⚠️ Failed to fetch page ${p}:`, err.message);
+      }
+    }
+  }
+
+  return {
+    source: `https://sinta.kemdiktisaintek.go.id/affiliations/authors/${affiliationId}`,
+    totalPages,
+    totalAuthors: allAuthors.length,
+    authors: allAuthors,
+  };
+}
 
 
-module.exports = {getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
+
+module.exports = {scrapeAllAuthors,scrapeAuthorsPage,getAffiliationDepartments,getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}

@@ -1,6 +1,6 @@
 const { Router } = require("express");
-const {getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
-
+const {scrapeAllAuthors,scrapeAuthorsPage,getAffiliationDepartments,getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
+const { runScraping, startCron, stopCron } = require("../utils/scheduler")
 const routers = Router()
 
 // Single endpoint: GET /sinta?affiliationId=...&authorId=...
@@ -187,8 +187,68 @@ routers.get('/wcu', async (req, res) => {
   }
 });
 
+// GET /sinta/departments?affiliationId=2136
+routers.get('/departments', async (req, res) => {
+  try {
+    const { affiliationId } = req.query;
+    if (!affiliationId) {
+      return res.status(400).json({ ok: false, error: 'Missing affiliationId' });
+    }
+
+    const data = await getAffiliationDepartments(affiliationId);
+    res.json({ ok: true, data });
+  } catch (e) {
+    res.status(502).json({ ok: false, error: 'Scrape failed', detail: e.message || String(e) });
+  }
+});
 
 
+
+// === Express Endpoint ===
+routers.get("/authors", async (req, res) => {
+  try {
+    const { affiliationId, all = "true" } = req.query;
+    if (!affiliationId)
+      return res.status(400).json({ ok: false, error: "Missing affiliationId" });
+
+    const result =
+      all === "true"
+        ? await scrapeAllAuthors(affiliationId)
+        : await scrapeAuthorsPage(affiliationId, req.query.page || 1);
+
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: "Scraping failed",
+      detail: err.message || String(err),
+    });
+  }
+});
+
+
+// === EXPRESS ENDPOINTS JALANKAN SCRAPPING ===
+// trigger sekali jalan (testing)
+// === Express Endpoints ===
+routers.post('/scheduler/run', async (req, res) => {
+  try {
+    const save = (req.query.save ?? 'false').toString().toLowerCase() === 'true';
+    const summary = await runScraping({ saveToFile: save });
+    res.json(summary);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
+
+routers.post('/scheduler/start', (req, res) => {
+  const started = startCron();
+  res.json({ ok: true, started });
+});
+
+routers.post('/scheduler/stop', (req, res) => {
+  const stopped = stopCron();
+  res.json({ ok: true, stopped });
+});
 
 
 module.exports = routers;
