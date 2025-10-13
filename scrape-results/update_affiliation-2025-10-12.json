@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "data": {
+    "type": "affiliation",
+    "affiliationId": "2136",
+    "name": "Institut Sains dan Teknologi Terpadu Surabaya",
+    "scores": {
+      "overall": 20092,
+      "three_year": 9213,
+      "productivity": 314,
+      "productivity_three_year": 144
+    },
+    "source": "https://sinta.kemdiktisaintek.go.id/affiliations/profile/2136"
+  }
+}

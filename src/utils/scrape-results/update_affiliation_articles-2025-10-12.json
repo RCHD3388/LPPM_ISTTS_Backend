@@ -1,0 +1,110 @@
+{
+  "ok": true,
+  "view": "scopus",
+  "data": [
+    {
+      "title": "Automated Performance Analysis of Wushu Movements Using Pose Estimation and Dynamic Time Warping",
+      "year": 2025,
+      "cited": 0,
+      "venue": "Proceedings International Seminar on Intelligent Technology and Its Applications Isitia",
+      "venueLink": "https://www.scopus.com/sourceid/21101257833",
+      "quartile": "no-Q Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105016906508&origin=resultslist",
+      "creators": "Sianto L.P."
+    },
+    {
+      "title": "Optimizing spinal cord lesion segmentation using hierarchical classification and U-NET based segmentation model",
+      "year": 2025,
+      "cited": 0,
+      "venue": "Array",
+      "venueLink": "https://www.scopus.com/sourceid/21101080486",
+      "quartile": "Q2 Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105014526898&origin=resultslist",
+      "creators": "Cahyadi D."
+    },
+    {
+      "title": "Recommender System Based on Social Network Analysis of Student Workshop and Event Activities Compared to GPA and Department",
+      "year": 2025,
+      "cited": 0,
+      "venue": "International Journal on Informatics Visualization",
+      "venueLink": "https://www.scopus.com/sourceid/21101033322",
+      "quartile": "Q3 Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105011741997&origin=resultslist",
+      "creators": "Setiawan E.I."
+    },
+    {
+      "title": "Optimization of LPG Distribution for a Multiplatform-Based LPG Marketplace",
+      "year": 2025,
+      "cited": 0,
+      "venue": "International Journal of Engineering Science and Information Technology",
+      "venueLink": "https://www.scopus.com/sourceid/21101298345",
+      "quartile": "no-Q Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105010918245&origin=resultslist",
+      "creators": "Budianto H."
+    },
+    {
+      "title": "Koi varieties identification based zero parameter simple linear iterative clustering and support vector machine",
+      "year": 2025,
+      "cited": 0,
+      "venue": "Iop Conference Series Earth and Environmental Science",
+      "venueLink": "https://www.scopus.com/sourceid/19900195068",
+      "quartile": "Q3 Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-85218700741&origin=resultslist",
+      "creators": "Setiawan A."
+    },
+    {
+      "title": "Leveraging synthetic mammograms to enhance deep-learning performance for breast cancer classification using EfficientNetV2L architecture",
+      "year": 2025,
+      "cited": 0,
+      "venue": "Eai Endorsed Transactions on AI and Robotics",
+      "venueLink": "https://www.scopus.com/sourceid/21101254818",
+      "quartile": "no-Q Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105015328614&origin=resultslist",
+      "creators": "Sutjiadi R."
+    },
+    {
+      "title": "Retrieval Augmented Generation-Based Chatbot for Prospective and Current University Students",
+      "year": 2025,
+      "cited": 0,
+      "venue": "International Journal of Engineering Science and Information Technology",
+      "venueLink": "https://www.scopus.com/sourceid/21101298345",
+      "quartile": "no-Q Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105010860689&origin=resultslist",
+      "creators": "Hartono L.S."
+    },
+    {
+      "title": "Progressively Trained Deeply Supervised Network for Brain Tumor Segmentation",
+      "year": 2025,
+      "cited": 0,
+      "venue": "Icadeis 2025 2025 International Conference on Advancement in Data Science E Learning and Information",
+      "venueLink": "https://www.scopus.com/sourceid/21101287757",
+      "quartile": "no-Q Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105002276699&origin=resultslist",
+      "creators": "Susanto E.K."
+    },
+    {
+      "title": "Optimized image-based grouping of e-commerce products using deep hierarchical clustering",
+      "year": 2025,
+      "cited": 0,
+      "venue": "International Journal of Advances in Intelligent Informatics",
+      "venueLink": "https://www.scopus.com/sourceid/21100890645",
+      "quartile": "Q3 Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105015420883&origin=resultslist",
+      "creators": "Pranoto Y.M."
+    },
+    {
+      "title": "Kuntilanak as a Runtime Entity: Technical Integration of Javanese Folklore Using Manga Matrix in a 2D Horror Game",
+      "year": 2025,
+      "cited": 0,
+      "venue": "International Journal of Engineering Science and Information Technology",
+      "venueLink": "https://www.scopus.com/sourceid/21101298345",
+      "quartile": "no-Q Journal",
+      "externalLink": "https://www.scopus.com/record/display.uri?eid=2-s2.0-105010885683&origin=resultslist",
+      "creators": "Saurik H.T.T."
+    }
+  ],
+  "meta": {
+    "limit": 50,
+    "maxPages": 1
+  }
+}

@@ -26,6 +26,11 @@ db.Bank = require("./bank.js")(sequelize, Sequelize.DataTypes)
 db.FilePenting = require("./file_penting.js")(sequelize, Sequelize.DataTypes)
 db.Lampiran = require("./lampiran.js")(sequelize, Sequelize.DataTypes)
 db.Pengumuman = require("./pengumuman.js")(sequelize, Sequelize.DataTypes)
+db.Articles = require("./articles.js")(sequelize,Sequelize.DataTypes)
+db.Departement = require("./departement.js")(sequelize,Sequelize.DataTypes)
+db.Dosen = require("./dosen.js")(sequelize,Sequelize.DataTypes)
+db.SintaResearches = require("./sintaResearches.js")(sequelize,Sequelize.DataTypes)
+db.SintaScore = require("./sintaScore.js")(sequelize,Sequelize.DataTypes)
 
 
 module.exports = db
