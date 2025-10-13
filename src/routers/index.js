@@ -6,6 +6,10 @@ const bankRouter = require("./bank.js");
 const filepentingRouter = require("./filepenting.js");
 const pengumumanController = require("./pengumuman.js");
 const downloadRouter = require("./download.js");
+const articleRouter = require("./article.js")
+const dosenRouter = require("./dosen.js")
+const sintaScoreRouter = require("./sinta_score.js")
+const departementRouter = require("./departement.js")
 
 const routers = Router()
 
@@ -16,5 +20,11 @@ routers.use('/bank', bankRouter)
 routers.use('/filepenting', filepentingRouter)
 routers.use('/pengumuman', pengumumanController)
 routers.use('/download', downloadRouter)
+routers.use("/article",articleRouter)
+routers.use("/dosen",dosenRouter)
+routers.use("/score",sintaScoreRouter)
+routers.use("/departement",departementRouter)
+
+
 
 module.exports = routers;
