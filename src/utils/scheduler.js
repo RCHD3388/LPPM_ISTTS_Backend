@@ -1,10 +1,11 @@
 // scheduler-inline-json.js
 const axios = require('axios');
+const { Op } = require("sequelize");
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
 const { url } = require('inspector');
-const { SintaScore, Articles, Departement, Dosen } = require('../models');
+const { SintaScore, Articles, Departement, Dosen, SintaResearches } = require('../models');
 const departement = require('../models/departement');
 const https = require("https")
 
@@ -40,9 +41,10 @@ const SCRAPE_ENDPOINTS = [
   {name:"update_affiliation_articles",url:`${BASE_URL}/api/v1/scrapping/articles?affiliationId=2136`},
   {name:"update_affiliation_chart", url:`${BASE_URL}/api/v1/scrapping/charts?affiliationId=2136`},
   {name:"update_affiliation_line_graph", url:`${BASE_URL}/api/v1/scrapping/activity?affiliationId=2136`},
-  // {name:"update_affiliation_stats", url:`${BASE_URL}/api/v1/scrapping/stats?affiliationId=2136`},
+  {name:"update_affiliation_stats", url:`${BASE_URL}/api/v1/scrapping/stats?affiliationId=2136`},
   {name:"fetch_all_departement", url:`${BASE_URL}/api/v1/scrapping/departments?affiliationId=2136/072021`},
   {name:"fetch_all_author", url:`${BASE_URL}/api/v1/scrapping/authors?affiliationId=2136`},
+  {name:"fetch_all_researches",url:`${BASE_URL}/api/v1/scrapping/researches?affiliationId=2136`}
   // { name: 'articles', url: `${BASE_URL}/sinta/articles?affiliationId=2136&view=scopus&limit=10` },
   // { name: 'charts',   url: `${BASE_URL}/sinta/charts?affiliationId=2136&view=scopus&engine=browser` },
   // { name: 'stats',    url: `${BASE_URL}/sinta/stats?affiliationId=2136&view=scopus` },
@@ -160,6 +162,7 @@ async function runScraping({ saveToFile = false } = {}) {
                 venue: Array.isArray(art.venue)?dumpArray(art.venue):art.venue,
                 venue_link: art.venue_link || "",
                 quartile: art.quartile,
+                type:art.type,
                 external_link: art.external_link,
               });
               console.log(`✅ Added article: ${art.title}`);
@@ -275,10 +278,19 @@ async function runScraping({ saveToFile = false } = {}) {
 
         for (const d of departmentData) {
           try {
+            console.log(d);
             const exist = await Departement.findOne({ where: { nama: d.name } });
             if (!exist) {
-              await Departement.create({ nama: d.name });
+              await Departement.create({ nama: d.name ,sinta_overall:d.sintaScoreOverall,sinta_3yr:d.sintaScore3Yr});
               console.log(`✅ Added department: ${d.name}`);
+            }else{
+              await Departement.update({
+                sinta_overall:d.sintaScoreOverall,sinta_3yr:d.sintaScore3Yr
+              },{
+                where:{
+                  nama:d.name
+                }
+              })
             }
           } catch (err) {
             console.warn(`⚠️ Failed to insert department ${d}:`, err.message);
@@ -295,23 +307,42 @@ async function runScraping({ saveToFile = false } = {}) {
             console.log(`\n🔹 Processing author ${a.name} (${a.authorId})`);
 
             // cek & bersihkan department
-            const cleanDept = a.department.name.replace(/\s*\([A-Z0-9]+\)\s*$/, "");
-            const dept = await Departement.findOne({ where: { nama: cleanDept } });
+           // 🔹 Cek & bersihkan nama departemen
+            const rawDept = a.department?.name || "";
+            const cleanDept = rawDept.trim();
 
+            // Cari departemen dengan nama mirip (case-insensitive)
+            const dept = await Departement.findOne({
+              where: {
+                nama: {
+                  [Op.like]: cleanDept, // Cocokkan tanpa sensitif huruf besar
+                },
+              },
+            });
+            console.log(dept.dataValues.id);
+            
+            
             // create/update dosen
             const exist = await Dosen.findOne({ where: { sinta_id: a.authorId } });
             if (exist) {
+              // 🔄 Update data jika sudah ada
               await Dosen.update(
-                { departement_id: dept?.id || null, pp_url: a.imageUrl },
+                {
+                  departemen_id: dept.dataValues.id || null,
+                  pp_url: a.imageUrl || exist.pp_url,
+                },
                 { where: { sinta_id: a.authorId } }
               );
+              console.log(`✅ Updated Dosen ${a.name}`);
             } else {
+              // 🆕 Buat baru jika belum ada
               await Dosen.create({
                 name: a.name,
                 sinta_id: a.authorId,
-                departement_id: dept?.id || null,
+                departement_id: dept.dataValues?.id || null,
                 pp_url: a.imageUrl,
               });
+              console.log(`✨ Created Dosen ${a.name}`);
             }
             
             
@@ -333,7 +364,53 @@ async function runScraping({ saveToFile = false } = {}) {
             console.error(`❌ Error processing author ${a.name}:`, err.message);
           }
         }
+      }else if (item.name === "fetch_all_researches") {
+        console.log("🧪 Fetching and saving all research data...");
+
+        try {
+          const researches = item.data?.data || [];
+
+          for (const r of researches) {
+            try {
+              // cek apakah data dengan judul sama sudah ada
+              const exists = await SintaResearches.findOne({
+                where: { title: r.title },
+              });
+
+              // simpan data personils sebagai JSON string
+              const personilsData = JSON.stringify(r.personils || []);
+
+              if (!exists) {
+                await SintaResearches.create({
+                  title: r.title,
+                  leader: r.leader || null,
+                  funding: r.funding || null,
+                  personils: personilsData,
+                  year: r.year || null,
+                  nominal: r.nominal || null,
+                });
+                console.log(`✅ Added new research: ${r.title}`);
+              } else {
+                await exists.update({
+                  leader: r.leader || exists.leader,
+                  funding: r.funding || exists.funding,
+                  personils: personilsData,
+                  year: r.year || exists.year,
+                  nominal: r.nominal || exists.nominal,
+                });
+                console.log(`🔁 Updated existing research: ${r.title}`);
+              }
+            } catch (err) {
+              console.warn(`⚠️ Failed to save research "${r.title}":`, err.message);
+            }
+          }
+
+          console.log(`✅ Saved ${researches.length} research items successfully.`);
+        } catch (err) {
+          console.error("❌ Error processing research data:", err.message);
+        }
       }
+
 
       results.push(item);
       console.log(`✅ Finished processing endpoint: ${ep.name}\n`);
@@ -380,6 +457,7 @@ async function processAuthorEndpoints(authorId, authorName) {
             venue: art.venue,
             venue_link: art.venue_link || "",
             quartile: art.quartile,
+            type:art.type,
             external_link: art.external_link,
           });
           console.log(`📰 Added article for ${authorName}: ${art.title}`);

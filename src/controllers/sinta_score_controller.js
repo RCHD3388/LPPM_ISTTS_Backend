@@ -65,7 +65,9 @@ const getGraphHomepage = async (req, res, next) => {
     }));
 
     // === Line Graphs ===
-    const formattedArticle = getLineData("line_graph_article");
+    const formattedScopus = getLineData("line_graph_scopus");
+    const formattedGaruda = getLineData("line_graph_garuda");
+    const formattedScholar = getLineData("line_graph_googlescholar");
     const formattedResearch = getLineData("line_graph_researches");
     const formattedService = getLineData("line_graph_services");
 
@@ -73,7 +75,9 @@ const getGraphHomepage = async (req, res, next) => {
     const final_data = {
       quartile: formattedQuartile,
       research_output: formattedResearchOutput,
-      article: formattedArticle,
+      scholar: formattedScholar,
+      garuda:formattedGaruda,
+      scopus:formattedScopus,
       research: formattedResearch,
       service: formattedService,
     };

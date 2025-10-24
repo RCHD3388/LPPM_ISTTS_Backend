@@ -10,6 +10,7 @@ const articleRouter = require("./article.js")
 const dosenRouter = require("./dosen.js")
 const sintaScoreRouter = require("./sinta_score.js")
 const departementRouter = require("./departement.js")
+const researchRouter = require("./sinta_researches.js")
 
 const routers = Router()
 
@@ -24,6 +25,7 @@ routers.use("/article",articleRouter)
 routers.use("/dosen",dosenRouter)
 routers.use("/score",sintaScoreRouter)
 routers.use("/departement",departementRouter)
+routers.use("/research",researchRouter)
 
 
 

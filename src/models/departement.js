@@ -14,7 +14,15 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false
       },
-      nama: DataTypes.STRING
+      nama: DataTypes.STRING,
+      sinta_overall:{
+        type:DataTypes.INTEGER,
+        allowNull:true
+      },
+      sinta_3yr:{
+        type:DataTypes.INTEGER,
+        allowNull:true
+      },
     },
     {
       sequelize,

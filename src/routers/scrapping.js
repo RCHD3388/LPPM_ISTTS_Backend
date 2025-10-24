@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const {scrapeAllAuthors,scrapeAuthorsPage,getAffiliationDepartments,getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
+const {scrapeAffiliationResearches,scrapeAllAuthors,scrapeAuthorsPage,getAffiliationDepartments,getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAuthorCharts,getAffiliationCharts,getAuthorArticlesAllViews,getAffiliationArticlesAllViews,getAffiliationScores, getAuthorScores} =  require("../utils/scrapping.js")
 const { runScraping, startCron, stopCron } = require("../utils/scheduler")
 const routers = Router()
 
@@ -44,14 +44,14 @@ routers.get('/articles', async (req, res) => {
     let data;
     if (authorId && affiliationId) {
       const [authorArticles, affiliationArticles] = await Promise.all([
-        getAuthorArticlesByView(String(authorId), { view, maxPages, limit }),
-        getAffiliationArticlesByView(String(affiliationId), { view, maxPages, limit })
+        getAuthorArticlesAllViews(String(authorId), { view, maxPages, limit }),
+        getAffiliationArticlesAllViews(String(affiliationId), { view, maxPages, limit })
       ]);
       data = { author: authorArticles, affiliation: affiliationArticles };
     } else if (authorId) {
-      data = await getAuthorArticlesByView(String(authorId), { view, maxPages, limit });
+      data = await getAuthorArticlesAllViews(String(authorId), { view, maxPages, limit });
     } else {
-      data = await getAffiliationArticlesByView(String(affiliationId), { view, maxPages, limit });
+      data = await getAffiliationArticlesAllViews(String(affiliationId), { view, maxPages, limit });
     }
 
     res.json({ ok: true, view, data, meta: { limit, maxPages } });
@@ -222,6 +222,24 @@ routers.get("/authors", async (req, res) => {
       ok: false,
       error: "Scraping failed",
       detail: err.message || String(err),
+    });
+  }
+});
+
+routers.get("/researches", async (req, res) => {
+  const { affiliationId } = req.query;
+
+  try {
+    const result = await scrapeAffiliationResearches(affiliationId);
+    if (!result.ok) {
+      return res.status(500).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error("❌ Endpoint error:", error.message);
+    return res.status(500).json({
+      ok: false,
+      error: error.message,
     });
   }
 });

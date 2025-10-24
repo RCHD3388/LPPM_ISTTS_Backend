@@ -12,6 +12,7 @@ module.exports = {
       venue: Sequelize.STRING,
       venue_link: Sequelize.STRING,
       quartile: Sequelize.STRING,
+      type:Sequelize.STRING,
       external_link: Sequelize.STRING,
       createdAt: Sequelize.DATE,
       updatedAt: Sequelize.DATE

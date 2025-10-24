@@ -21,6 +21,10 @@ module.exports = (sequelize, DataTypes) => {
       venue: DataTypes.STRING,
       venue_link: DataTypes.STRING,
       quartile: DataTypes.STRING,
+      type:{
+        type:DataTypes.STRING,
+        defaultValue:"scopus"
+      },
       external_link: DataTypes.STRING
     },
     {

@@ -1,35 +1,51 @@
-'use strict'
-const { Model } = require('sequelize')
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-  class SintaResearches extends Model {
+  class SintaResearch extends Model {
     static associate(models) {}
   }
 
-  SintaResearches.init(
+  SintaResearch.init(
     {
       id: {
         type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true,
-        allowNull: false
+        allowNull: false,
       },
-      dosen_sinta_id: {type:DataTypes.STRING,allowNull:true},
-      title: {type:DataTypes.STRING,allowNull:true},
-      year: {type:DataTypes.INTEGER,allowNull:true},
-      cited: {type:DataTypes.INTEGER,allowNull:true},
-      venue: {type:DataTypes.STRING,allowNull:true},
-      venue_link: {type:DataTypes.STRING,allowNull:true},
-      quartile: {type:DataTypes.STRING,allowNull:true},
-      external_link: {type:DataTypes.STRING,allowNull:true}
+      title: {
+        type: DataTypes.STRING(500),
+        allowNull: false,
+      },
+      leader: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      funding: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      personils: {
+        type: DataTypes.TEXT, // JSON string (array nama + url)
+        allowNull: true,
+      },
+      year: {
+        type: DataTypes.STRING(10),
+        allowNull: true,
+      },
+      nominal: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+      },
     },
     {
       sequelize,
-      modelName: 'SintaResearches',
+      modelName: 'SintaResearch',
       tableName: 'SintaResearches',
-      timestamps: true
+      timestamps: true,
     }
-  )
+  );
 
-  return SintaResearches
-}
+  return SintaResearch;
+};

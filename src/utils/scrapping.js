@@ -141,85 +141,78 @@ async function getAuthorScores(authorId) {
   };
 }
 
-// -------- Articles scraping helpers --------
-// ====== Article scraping (exact selectors you provided) ======
+// ===============================================================
+// 🔹 FULL ARTICLE SCRAPER SUPPORTING MULTIPLE VIEWS
+// ===============================================================
+const ALLOWED_VIEWS = ["scopus", "garuda", "googlescholar", "rama"];
 
 function viewToQuery(view, { forceForAuthor = false } = {}) {
-  // Normalize
-  const v = (view || 'scopus').toLowerCase();
-
-  // Supported views
-  const allowed = new Set(['scopus', 'garuda', 'googlescholar', 'rama']);
-
-  // Fallback to scopus if unknown
-  const picked = allowed.has(v) ? v : 'scopus';
-
-  // Affiliation pages originally didn't need ?view=scopus (implicit),
-  // but for AUTHOR pages you want ?view=scopus explicitly.
-  // We'll return "" only when:
-  //   - picked === 'scopus' AND we are NOT forcing it (i.e., affiliation).
-  if (picked === 'scopus' && !forceForAuthor) return '';
-
+  const v = (view || "scopus").toLowerCase();
+  const allowed = new Set(ALLOWED_VIEWS);
+  const picked = allowed.has(v) ? v : "scopus";
+  if (picked === "scopus" && !forceForAuthor) return "";
   return `?view=${picked}`;
 }
 
 function buildAffiliationArticleUrls(affiliationId, view) {
-  // For affiliation: keep old behavior (scopus has no param),
-  // but pass ?view=garuda / ?view=googlescholar / ?view=rama if requested.
   const q = viewToQuery(view, { forceForAuthor: false });
-  return DOMAINS.map(base =>
-    `${base}/affiliations/profile/${affiliationId}/${q}`.replace(/\/\?/, '/?')
+  return DOMAINS.map((base) =>
+    `${base}/affiliations/profile/${affiliationId}/${q}`.replace(/\/\?/, "/?")
   );
 }
 
 function buildAuthorArticleUrls(authorId, view) {
-  // For author: ALWAYS include ?view=<picked>, even for scopus.
   const q = viewToQuery(view, { forceForAuthor: true });
-  return DOMAINS.map(base =>
-    `${base}/authors/profile/${authorId}/${q}`.replace(/\/\?/, '/?')
+  return DOMAINS.map((base) =>
+    `${base}/authors/profile/${authorId}/${q}`.replace(/\/\?/, "/?")
   );
 }
 
-// Parse one page that contains .ar-list-item blocks
+// ===============================================================
+// 🔸 PARSER
+// ===============================================================
 function parseArListPage(html, pageUrl) {
   const $ = cheerio.load(html);
   const items = [];
 
-  $('.ar-list-item').each((_, el) => {
+  $(".ar-list-item").each((_, el) => {
     const $el = $(el);
+    const $titleA = $el.find(".ar-title a").first();
+    const title = $titleA.text().replace(/\s+/g, " ").trim() || null;
+    const extLink = $titleA.attr("href") || null;
 
-    // Title + external link (often Scopus/GS)
-    const $titleA = $el.find('.ar-title a').first();
-    const title = $titleA.text().replace(/\s+/g, ' ').trim() || null;
-    const extLink = $titleA.attr('href') || null;
-
-    // Meta block (venue, quartile, creator)
-    const $metaBlocks = $el.find('.ar-meta');
+    const $metaBlocks = $el.find(".ar-meta");
     const $metaTop = $metaBlocks.eq(0);
     const $metaBottom = $metaBlocks.eq(1);
 
-    const $quartile = $metaTop.find('.ar-quartile').first();
-    const quartile = $quartile.text().replace(/\s+/g, ' ').trim() || null;
+    const $quartile = $metaTop.find(".ar-quartile").first();
+    const quartile = $quartile.text().replace(/\s+/g, " ").trim() || null;
 
-    const $venueA = $metaTop.find('.ar-pub').first();
-    const venue = $venueA.text().replace(/\s+/g, ' ').trim() || null;
-    const venueLink = $venueA.attr('href') ? new URL($venueA.attr('href'), pageUrl).toString() : null;
+    const $venueA = $metaTop.find(".ar-pub").first();
+    const venue = $venueA.text().replace(/\s+/g, " ").trim() || null;
+    const venueLink = $venueA.attr("href")
+      ? new URL($venueA.attr("href"), pageUrl).toString()
+      : null;
 
-    // Creator text like: "Creator : Hartono L.S."
     let creators = null;
-    const creatorAnchor = $metaTop.find('a').filter((_, a) => {
-      return $(a).text().toLowerCase().includes('creator');
-    }).first();
+    const creatorAnchor = $metaTop
+      .find("a")
+      .filter((_, a) => $(a).text().toLowerCase().includes("creator"))
+      .first();
     if (creatorAnchor.length) {
-      creators = creatorAnchor.text().replace(/^\s*creator\s*:\s*/i, '').replace(/\s+/g, ' ').trim() || null;
+      creators =
+        creatorAnchor
+          .text()
+          .replace(/^\s*creator\s*:\s*/i, "")
+          .replace(/\s+/g, " ")
+          .trim() || null;
     }
 
-    // Year + Cited
-    const yearText = $metaBottom.find('.ar-year').first().text();
+    const yearText = $metaBottom.find(".ar-year").first().text();
     const yearMatch = yearText.match(/\b(19|20)\d{2}\b/);
     const year = yearMatch ? Number(yearMatch[0]) : null;
 
-    const citedText = $metaBottom.find('.ar-cited').first().text();
+    const citedText = $metaBottom.find(".ar-cited").first().text();
     const citedMatch = citedText.match(/(\d+)\s*cited/i);
     const cited = citedMatch ? Number(citedMatch[1]) : 0;
 
@@ -232,9 +225,7 @@ function parseArListPage(html, pageUrl) {
         venueLink,
         quartile,
         externalLink: extLink,
-      // SINTA sometimes also links to its own document page inside .ar-title/.ar-meta;
-      // if you later want SINTA doc IDs, you can look for links containing "/documents/"
-        creators
+        creators,
       });
     }
   });
@@ -242,12 +233,18 @@ function parseArListPage(html, pageUrl) {
   return items;
 }
 
-// Best-effort pagination detector (if SINTA provides pagination controls)
+// ===============================================================
+// 🔸 PAGINATION HELPER
+// ===============================================================
 function findNextPageUrl($, currentUrl) {
   let href =
-    $('a[rel="next"]').attr('href') ||
-    $('a:contains("Next")').filter((_, el) => $(el).text().trim().toLowerCase() === 'next').attr('href') ||
-    $('a:contains("Berikutnya")').filter((_, el) => $(el).text().trim().toLowerCase() === 'berikutnya').attr('href');
+    $('a[rel="next"]').attr("href") ||
+    $('a:contains("Next")')
+      .filter((_, el) => $(el).text().trim().toLowerCase() === "next")
+      .attr("href") ||
+    $('a:contains("Berikutnya")')
+      .filter((_, el) => $(el).text().trim().toLowerCase() === "berikutnya")
+      .attr("href");
 
   if (!href) return null;
   try {
@@ -257,6 +254,9 @@ function findNextPageUrl($, currentUrl) {
   }
 }
 
+// ===============================================================
+// 🔸 FETCH PAGED ARTICLES
+// ===============================================================
 async function collectArticles(startUrl, { maxPages = 1, limit = 50 } = {}) {
   let url = startUrl;
   const all = [];
@@ -273,7 +273,10 @@ async function collectArticles(startUrl, { maxPages = 1, limit = 50 } = {}) {
   return all;
 }
 
-async function getAffiliationArticlesByView(affiliationId, { view = 'scopus', maxPages = 1, limit = 50 } = {}) {
+// ===============================================================
+// 🔹 FETCH ARTICLES BY SINGLE VIEW
+// ===============================================================
+async function getAffiliationArticlesByView(affiliationId, { view = "scopus", maxPages = 1, limit = 50 } = {}) {
   let lastErr;
   for (const url of buildAffiliationArticleUrls(affiliationId, view)) {
     try {
@@ -283,10 +286,10 @@ async function getAffiliationArticlesByView(affiliationId, { view = 'scopus', ma
       lastErr = e;
     }
   }
-  throw new Error(`Unable to fetch affiliation articles (${view}): ${lastErr?.message || 'unknown error'}`);
+  throw new Error(`Unable to fetch affiliation articles (${view}): ${lastErr?.message || "unknown error"}`);
 }
 
-async function getAuthorArticlesByView(authorId, { view = 'scopus', maxPages = 1, limit = 50 } = {}) {
+async function getAuthorArticlesByView(authorId, { view = "scopus", maxPages = 1, limit = 50 } = {}) {
   let lastErr;
   for (const url of buildAuthorArticleUrls(authorId, view)) {
     try {
@@ -296,9 +299,41 @@ async function getAuthorArticlesByView(authorId, { view = 'scopus', maxPages = 1
       lastErr = e;
     }
   }
-  throw new Error(`Unable to fetch author articles (${view}): ${lastErr?.message || 'unknown error'}`);
+  throw new Error(`Unable to fetch author articles (${view}): ${lastErr?.message || "unknown error"}`);
 }
 
+// ===============================================================
+// 🔹 FETCH ALL VIEWS (scopus, garuda, googlescholar, rama)
+// ===============================================================
+async function getAffiliationArticlesAllViews(affiliationId, { maxPages = 1, limit = 50 } = {}) {
+  const results = [];
+  for (const view of ALLOWED_VIEWS) {
+    try {
+      const articles = await getAffiliationArticlesByView(affiliationId, { view, maxPages, limit });
+      const typed = articles.map((a) => ({ ...a, type: view }));
+      results.push(...typed);
+      console.log(`✅ Fetched ${articles.length} ${view} articles.`);
+    } catch (err) {
+      console.warn(`⚠️ Failed fetching ${view} articles:`, err.message);
+    }
+  }
+  return results;
+}
+
+async function getAuthorArticlesAllViews(authorId, { maxPages = 1, limit = 50 } = {}) {
+  const results = [];
+  for (const view of ALLOWED_VIEWS) {
+    try {
+      const articles = await getAuthorArticlesByView(authorId, { view, maxPages, limit });
+      const typed = articles.map((a) => ({ ...a, type: view }));
+      results.push(...typed);
+      console.log(`✅ Fetched ${articles.length} ${view} articles.`);
+    } catch (err) {
+      console.warn(`⚠️ Failed fetching ${view} articles:`, err.message);
+    }
+  }
+  return results;
+}
 
 async function scrapeChartsWithBrowser(url, { timeoutMs = 45000 } = {}) {
   const browser = await puppeteer.launch({
@@ -690,59 +725,100 @@ function readCartesianSeries(option) {
   return { categories, series };
 }
 
-// ==== Scrape dari HTML statis (tanpa headless) ====
+
+function normalizeActivityView(v) {
+  const map = {
+    "": "scopus",
+    researches: "researches",
+    services: "services",
+    googlescholar: "googlescholar",
+    garuda: "garuda",
+  };
+  return map[v] || v || "scopus";
+}
+
+function buildAffiliationActivityUrls(affiliationId, view) {
+  return DOMAINS.map((base) => {
+    if (view === "" || view === "researches" || view === "services") {
+      return `${base}/affiliations/profile/${affiliationId}/${view}`.replace(/\/$/, "");
+    } else if (view === "googlescholar" || view === "garuda") {
+      return `${base}/affiliations/profile/${affiliationId}/?view=${view}`;
+    }
+    return `${base}/affiliations/profile/${affiliationId}`;
+  });
+}
+
+function buildAuthorActivityUrls(authorId, view) {
+  return DOMAINS.map((base) => {
+    if (view === "" || view === "researches" || view === "services") {
+      return `${base}/authors/profile/${authorId}/${view}`.replace(/\/$/, "");
+    } else if (view === "googlescholar" || view === "garuda") {
+      return `${base}/authors/profile/${authorId}/?view=${view}`;
+    }
+    return `${base}/authors/profile/${authorId}`;
+  });
+}
+
+// ==========================================================
+const VIEWS = ["", "researches", "services", "googlescholar", "garuda"];
+// ==== Scrape dari HTML statis (tanpa headless) ==== 
 async function scrapeActivityFromPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
-
-  // Ambil option untuk #service-chart-articles
-  const opt = extractEchartsOptionFromScripts($, 'service-chart-articles');
+  const opt = extractEchartsOptionFromScripts($, "service-chart-articles");
   const parsed = readCartesianSeries(opt) || { categories: [], series: [] };
   return parsed;
 }
-function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 async function scrapeActivityWithBrowser(url, { timeoutMs = 45000, extraWaitMs = 1200 } = {}) {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox','--disable-setuid-sandbox']
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
   try {
     const page = await browser.newPage();
     await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     );
 
-    // Lebih sabar untuk XHR/lazy
     try {
-      await page.goto(url, { waitUntil: 'networkidle0', timeout: timeoutMs });
+      await page.goto(url, { waitUntil: "networkidle0", timeout: timeoutMs });
     } catch {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
       await sleep(1500);
     }
     if (extraWaitMs) await sleep(extraWaitMs);
 
-    // Helper di browser: cari kandidat chart di dalam .stat-chart
     const probeOnce = async () => {
       return await page.evaluate(() => {
         const out = [];
         const S = (sel) => Array.from(document.querySelectorAll(sel));
-        // kandidat kuat: elemen dalam .stat-chart yang punya id
-        const cand = S('.stat-chart [id], #service-chart-articles');
+        const cand = S(".stat-chart [id], #service-chart-articles");
         const seen = new Set();
         for (const el of cand) {
           if (!el.id || seen.has(el.id)) continue;
           seen.add(el.id);
-          // eslint-disable-next-line no-undef
-          const inst = (window.echarts && window.echarts.getInstanceByDom) ? window.echarts.getInstanceByDom(el) : null;
-          const hasAttr = el.hasAttribute('_echarts_instance_');
+          const inst =
+            window.echarts && window.echarts.getInstanceByDom
+              ? window.echarts.getInstanceByDom(el)
+              : null;
+          const hasAttr = el.hasAttribute("_echarts_instance_");
           const hasInst = !!inst;
-          let categories = [], seriesCount = 0;
+          let categories = [],
+            seriesCount = 0;
           if (inst) {
             const opt = inst.getOption() || {};
             const xa = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
-            categories = (xa && Array.isArray(xa.data)) ? xa.data.map(String) : [];
-            const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
+            categories = xa && Array.isArray(xa.data) ? xa.data.map(String) : [];
+            const sArr = Array.isArray(opt.series)
+              ? opt.series
+              : opt.series
+              ? [opt.series]
+              : [];
             seriesCount = sArr.length || 0;
           }
           out.push({ id: el.id, hasAttr, hasInst, categoriesLen: categories.length, seriesCount });
@@ -751,83 +827,71 @@ async function scrapeActivityWithBrowser(url, { timeoutMs = 45000, extraWaitMs =
       });
     };
 
-    // Scroll perlahan untuk memicu lazy-render
     const tryScrollAndProbe = async () => {
       const steps = 6;
-      for (let i=0;i<steps;i++){
-        const size = await page.evaluate(() => ({ h: document.body.scrollHeight, y: window.scrollY }));
-        await page.evaluate(y => window.scrollTo({ top: y, behavior: 'instant' }), (size.h/steps)*(i+1));
+      for (let i = 0; i < steps; i++) {
+        const size = await page.evaluate(() => ({
+          h: document.body.scrollHeight,
+          y: window.scrollY,
+        }));
+        await page.evaluate(
+          (y) => window.scrollTo({ top: y, behavior: "instant" }),
+          (size.h / steps) * (i + 1)
+        );
         await sleep(500);
         const info = await probeOnce();
-        const pick = info.find(x =>
-          (x.hasInst || x.hasAttr) && (x.seriesCount > 0 || x.categoriesLen > 0)
+        const pick = info.find(
+          (x) => (x.hasInst || x.hasAttr) && (x.seriesCount > 0 || x.categoriesLen > 0)
         );
         if (pick) return pick.id;
       }
       return null;
     };
 
-    // 1) coba probe tanpa scroll
     let targetId = null;
     const firstProbe = await probeOnce();
-    const picked1 = firstProbe.find(x =>
-      (x.hasInst || x.hasAttr) && (x.seriesCount > 0 || x.categoriesLen > 0)
+    const picked1 = firstProbe.find(
+      (x) => (x.hasInst || x.hasAttr) && (x.seriesCount > 0 || x.categoriesLen > 0)
     );
     if (picked1) {
       targetId = picked1.id;
     } else {
-      // 2) scroll & probe berulang
       targetId = await tryScrollAndProbe();
     }
 
-    // Jika masih belum ketemu, fallback: pilih kandidat paling mirip “service/activities”
-    if (!targetId && firstProbe.length){
-      const byHint = firstProbe.find(x => /service|activity|activities|articles/i.test(x.id));
+    if (!targetId && firstProbe.length) {
+      const byHint = firstProbe.find((x) =>
+        /service|activity|activities|articles/i.test(x.id)
+      );
       targetId = byHint?.id || firstProbe[0].id;
     }
     if (!targetId) return { categories: [], series: [] };
 
-    // Akhirnya ambil data dari chart terpilih
     const result = await page.evaluate((id) => {
-      function toStr(x){ return x==null ? '' : String(x); }
-      function toNum(x){ return (x==null || x==='') ? null : Number(x); }
+      const toStr = (x) => (x == null ? "" : String(x));
+      const toNum = (x) => (x == null || x === "" ? null : Number(x));
       const el = document.getElementById(id);
-      // eslint-disable-next-line no-undef
       const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
       if (!inst) return { categories: [], series: [] };
       const opt = inst.getOption();
       const xa = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
-      const categories = (xa && Array.isArray(xa.data)) ? xa.data.map(toStr) : [];
-      const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
-      const usable = sArr.filter(s => {
+      const categories = xa && Array.isArray(xa.data) ? xa.data.map(toStr) : [];
+      const sArr = Array.isArray(opt.series) ? opt.series : opt.series ? [opt.series] : [];
+      const usable = sArr.filter((s) => {
         const t = toStr(s.type).toLowerCase();
-        return (t === 'line' || t === 'bar') && Array.isArray(s.data);
+        return (t === "line" || t === "bar") && Array.isArray(s.data);
       });
-      const series = usable.map(s => ({
+      const series = usable.map((s) => ({
         name: toStr(s.name),
         type: toStr(s.type).toLowerCase(),
-        data: s.data.map(toNum)
+        data: s.data.map(toNum),
       }));
       return { categories, series, id };
     }, targetId);
 
-    // Optional: trigger resize kalau data kosong (beberapa chart render setelah resize)
-    if ((!result.categories.length || !result.series.length)) {
-      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+    if (!result.categories.length || !result.series.length) {
+      await page.evaluate(() => window.dispatchEvent(new Event("resize")));
       await sleep(600);
-      const retry = await page.evaluate((id) => {
-        const el = document.getElementById(id);
-        // eslint-disable-next-line no-undef
-        const inst = el && window.echarts ? window.echarts.getInstanceByDom(el) : null;
-        if (!inst) return { categories: [], series: [] };
-        const opt = inst.getOption();
-        const xa = Array.isArray(opt.xAxis) ? opt.xAxis[0] : opt.xAxis;
-        const categories = (xa && Array.isArray(xa.data)) ? xa.data.map(String) : [];
-        const sArr = Array.isArray(opt.series) ? opt.series : (opt.series ? [opt.series] : []);
-        const series = sArr.map(s => ({ name: String(s.name||''), type: String(s.type||'').toLowerCase(), data: (s.data||[]).map(v => v==null?null:Number(v)) }));
-        return { categories, series, id };
-      }, result.id);
-      return { categories: retry.categories, series: retry.series };
     }
 
     return { categories: result.categories, series: result.series };
@@ -836,28 +900,23 @@ async function scrapeActivityWithBrowser(url, { timeoutMs = 45000, extraWaitMs =
   }
 }
 
-
-
-// ==== Auto (HTML dulu, lalu headless jika kosong/ingin dipaksa) ====
-async function scrapeActivityAuto(url, { engine = 'auto' } = {}) {
-  const forceBrowser = String(engine).toLowerCase() === 'browser';
+async function scrapeActivityAuto(url, { engine = "auto" } = {}) {
+  const forceBrowser = String(engine).toLowerCase() === "browser";
   if (!forceBrowser) {
     try {
       const data = await scrapeActivityFromPage(url);
-      if ((data.categories && data.categories.length) && (data.series && data.series.length)) {
-        return data;
-      }
+      if (data.categories?.length && data.series?.length) return data;
     } catch (_) {}
   }
   return await scrapeActivityWithBrowser(url);
 }
 
-// ==== Ambil SEMUA view ('' | researches | services) ====
-async function getAffiliationActivity(affiliationId, { engine = 'auto' } = {}) {
-  const views = ['', 'researches', 'services'];
+// ==========================================================
+// 🔹 Fetch semua view (scopus, researches, services, googlescholar, garuda)
+async function getAffiliationActivity(affiliationId, { engine = "auto" } = {}) {
   const results = [];
 
-  for (const v of views) {
+  for (const v of VIEWS) {
     let lastErr;
     for (const url of buildAffiliationActivityUrls(affiliationId, v)) {
       try {
@@ -865,34 +924,28 @@ async function getAffiliationActivity(affiliationId, { engine = 'auto' } = {}) {
         results.push({
           source: url,
           view: normalizeActivityView(v),
-          ...data
+          ...data,
         });
-        break; // sukses satu domain -> lanjut ke view berikutnya
+        break;
       } catch (e) {
         lastErr = e;
       }
     }
-    if (lastErr && !results.find(r => r.view === v)) {
+    if (lastErr && !results.find((r) => r.view === v)) {
       results.push({
         view: normalizeActivityView(v),
-        error: lastErr.message
+        error: lastErr.message,
       });
     }
   }
 
-  return {
-    ok: true,
-    affiliationId,
-    engine,
-    data: results
-  };
+  return { ok: true, affiliationId, engine, data: results };
 }
 
-async function getAuthorActivity(authorId, { engine = 'auto' } = {}) {
-  const views = ['', 'researches', 'services'];
+async function getAuthorActivity(authorId, { engine = "auto" } = {}) {
   const results = [];
 
-  for (const v of views) {
+  for (const v of VIEWS) {
     let lastErr;
     for (const url of buildAuthorActivityUrls(authorId, v)) {
       try {
@@ -900,27 +953,22 @@ async function getAuthorActivity(authorId, { engine = 'auto' } = {}) {
         results.push({
           source: url,
           view: normalizeActivityView(v),
-          ...data
+          ...data,
         });
         break;
       } catch (e) {
         lastErr = e;
       }
     }
-    if (lastErr && !results.find(r => r.view === v)) {
+    if (lastErr && !results.find((r) => r.view === v)) {
       results.push({
         view: normalizeActivityView(v),
-        error: lastErr.message
+        error: lastErr.message,
       });
     }
   }
 
-  return {
-    ok: true,
-    authorId,
-    engine,
-    data: results
-  };
+  return { ok: true, authorId, engine, data: results };
 }
 
 // Tambahan util: aman untuk JSON5
@@ -1181,26 +1229,65 @@ async function getAffiliationWcu(affiliationId, { engine='auto' } = {}) {
 }
 
 async function getAffiliationDepartments(affiliationId) {
-  const base = 'https://sinta.kemdiktisaintek.go.id';
+  const base = "https://sinta.kemdiktisaintek.go.id";
   const url = `${base}/affiliations/departments/${affiliationId}`;
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
-  // Ambil semua <a> di dalam .tbl-content-name
   const departments = [];
-  $('.tbl-content-name > a[href*="/departments/profile/"]').each((_, el) => {
-    const name = $(el).text().trim();
-    const href = $(el).attr('href');
-    if (href && name) {
+
+  // Loop tiap baris data departemen
+  $(".row.d-item").each((_, el) => {
+    const $el = $(el);
+
+    // Ambil level (S1, S2, D3)
+    const level = $el.find(".tbl-content-meta span").first().text().trim();
+
+    // Ambil nama departemen
+    const $link = $el.find(".tbl-content-name a").first();
+    const name = $link.text().trim();
+    const href = $link.attr("href");
+    const urlFull = href?.startsWith("http") ? href : `${base}${href}`;
+
+    // Ambil SINTA Score
+    const sintaOverallText = $el
+      .find(".profile-hindex .text-warning")
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+    const sinta3YrText = $el
+      .find(".profile-hindex .text-success")
+      .text()
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const sintaOverallMatch = sintaOverallText.match(/Overall\s*:\s*([\d.,]+)/i);
+    const sinta3YrMatch = sinta3YrText.match(/3Yr\s*:\s*([\d.,]+)/i);
+
+    const sintaOverall = sintaOverallMatch ? sintaOverallMatch[1] : "0";
+    const sinta3Yr = sinta3YrMatch ? sinta3YrMatch[1] : "0";
+
+    if (name && level) {
+      const fullName = `${name} (${level})`;
+
       departments.push({
-        name,
-        url: href.startsWith('http') ? href : base + href
+        name: fullName,
+        level,
+        url: urlFull,
+        sintaScoreOverall: Number(sintaOverall.replace(/[,\.]/g, "")) || 0,
+        sintaScore3Yr: Number(sinta3Yr.replace(/[,\.]/g, "")) || 0,
       });
     }
   });
 
-  return { source: url, total: departments.length, departments };
+  return {
+    source: url,
+    total: departments.length,
+    departments,
+  };
 }
+
+module.exports = { getAffiliationDepartments };
 // === Scrape 1 halaman ===
 async function scrapeAuthorsPage(affiliationId, page = 1) {
   const baseUrl = `https://sinta.kemdiktisaintek.go.id/affiliations/authors/${affiliationId}?page=${page}`;
@@ -1290,6 +1377,78 @@ async function scrapeAllAuthors(affiliationId) {
   };
 }
 
+async function scrapeAffiliationResearches(affiliationId) {
+  if (!affiliationId) {
+    throw new Error("Missing affiliationId");
+  }
+
+  const url = `https://sinta.kemdiktisaintek.go.id/affiliations/profile/${affiliationId}/?view=researches`;
+
+  try {
+    const html = await fetchHtml(url);
+    const $ = cheerio.load(html);
+
+    const researchList = [];
+
+    $(".ar-list-item").each((_, el) => {
+      const $el = $(el);
+
+      // Judul penelitian
+      const title = $el.find(".ar-title a").first().text().trim();
+
+      // Leader
+      const leaderText = $el
+        .find(".ar-meta a")
+        .filter((_, a) => $(a).text().includes("Leader"))
+        .text()
+        .replace("Leader :", "")
+        .trim();
+
+      // Sumber pendanaan (MANDIRI / PFR / INTERNAL, dll)
+      const funding = $el.find(".ar-meta .ar-pub").text().trim();
+
+      // Personil (bisa kosong)
+      const personilLinks = [];
+      $el.find(".ar-meta a[href*='/authors/profile/']").each((_, link) => {
+        const name = $(link).text().trim();
+        const href = $(link).attr("href");
+        if (name) personilLinks.push({ name, url: href });
+      });
+      const personils = personilLinks.length > 0
+        ? personilLinks
+        : [{ name: "-", url: null }];
+
+      // Tahun & Nominal dana
+      const year = $el.find(".ar-year").text().replace(/\D+/g, "");
+      const nominal = $el.find(".ar-quartile").text().replace("Rp.", "").trim();
+
+      researchList.push({
+        title,
+        leader: leaderText,
+        funding,
+        personils,
+        year: year || null,
+        nominal: nominal || null,
+      });
+    });
+
+    return {
+      ok: true,
+      source: url,
+      total: researchList.length,
+      data: researchList,
+    };
+  } catch (err) {
+    console.error("❌ Failed to scrape researches:", err.message);
+    return {
+      ok: false,
+      error: err.message,
+      source: url,
+      data: [],
+    };
+  }
+}
 
 
-module.exports = {scrapeAllAuthors,scrapeAuthorsPage,getAffiliationDepartments,getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesByView,getAffiliationArticlesByView,getAffiliationScores, getAuthorScores}
+
+module.exports = {scrapeAffiliationResearches, scrapeAllAuthors,scrapeAuthorsPage,getAffiliationDepartments,getAffiliationWcu,normalizeActivityView,getAuthorActivity,getAffiliationActivity,getAuthorStats,getAffiliationStats,normalizeView,getAffiliationCharts,getAuthorCharts,getAuthorArticlesAllViews,getAffiliationArticlesAllViews,getAffiliationScores, getAuthorScores}
