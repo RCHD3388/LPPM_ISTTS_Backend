@@ -22,7 +22,8 @@ module.exports = {
       },
       lampiran_id: {
         type: Sequelize.INTEGER,
-        allowNull: false,
+        allowNull: true,
+        defaultValue: null,
         // TIDAK ADA 'references' sesuai aturan proyek
       },
       createdAt: {

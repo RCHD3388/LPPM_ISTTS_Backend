@@ -12,14 +12,14 @@ const mime = require('mime-types'); // ✅ tambahkan ini (npm install mime-types
 
 const routers = Router();
 
-routers.get("/:id", async (req, res, next) => { // 👈 jangan lupa tambahkan `next` di sini
+routers.get("/", async (req, res, next) => { // 👈 jangan lupa tambahkan `next` di sini
   try {
-    const { id } = req.params;
+    const { id } = req.query;
 
     // Cari lampiran
     const lampiran = await Lampiran.findOne({
       where: {
-        id: id
+        sumber_lampiran: id
       }
     });
 

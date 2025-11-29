@@ -5,7 +5,8 @@ const tagRouter = require("./tag.js");
 const periodeRouter = require("./periode.js");
 const bankRouter = require("./bank.js");
 const filepentingRouter = require("./filepenting.js");
-const pengumumanController = require("./pengumuman.js");
+const pengumumanRouter = require("./pengumuman.js");
+const laporanRouter = require("./laporan.js");
 const proposalRouter = require("./proposal.js")
 const downloadRouter = require("./download.js");
 const articleRouter = require("./article.js")
@@ -22,7 +23,8 @@ routers.use('/tag', tagRouter)
 routers.use('/periode', periodeRouter) 
 routers.use('/bank', bankRouter)
 routers.use('/filepenting', filepentingRouter)
-routers.use('/pengumuman', pengumumanController)
+routers.use('/pengumuman', pengumumanRouter)
+routers.use('/laporan', laporanRouter)
 routers.use('/proposal', proposalRouter)
 routers.use('/download', downloadRouter)
 routers.use("/article",articleRouter)

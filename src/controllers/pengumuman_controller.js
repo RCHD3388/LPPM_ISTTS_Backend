@@ -186,7 +186,10 @@ const getOne = async (req, res, next) => {
     });
 
     const lampirans = await Lampiran.findAll({
-      where: { sumber_id: pengumuman.id },
+      where: { 
+        sumber_id: pengumuman.id,  
+        tipe_lampiran: JENIS_DOKUMEN.PENGUMUMAN
+      },
     });
 
     const formattedData = {
