@@ -8,9 +8,11 @@ const { Op } = require("sequelize");
  * @param {Array} searchableFields Daftar kolom yang bisa dicari (LIKE)
  */
 async function paginate(model, query = {}, options = {}, searchableFields = []) {
+  const noPagination = !query.page && !query.limit;
+
   const page = parseInt(query.page, 10) || 1;
-  const limit = parseInt(query.limit, 10) || 10;
-  const offset = (page - 1) * limit;
+  const limit = noPagination ? null : (parseInt(query.limit, 10) || 10);
+  const offset = noPagination ? null : (page - 1) * limit;
 
   // --- Search ---
   let where = options.where || {};
@@ -35,20 +37,29 @@ async function paginate(model, query = {}, options = {}, searchableFields = []) 
     ...options,
     where,
     order,
-    limit,
-    offset,
+    limit: noPagination ? undefined : limit,
+    offset: noPagination ? undefined : offset,
   });
 
   return {
     data: rows,
-    meta: {
-      totalItems: count,
-      totalPages: Math.ceil(count / limit),
-      currentPage: page,
-      pageSize: limit,
-      hasNextPage: page < Math.ceil(count / limit),
-      hasPreviousPage: page > 1,
-    },
+    meta: noPagination
+      ? {
+        totalItems: count,
+        totalPages: 1,
+        currentPage: 1,
+        pageSize: count,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      }
+      : {
+        totalItems: count,
+        totalPages: Math.ceil(count / limit),
+        currentPage: page,
+        pageSize: limit,
+        hasNextPage: page < Math.ceil(count / limit),
+        hasPreviousPage: page > 1,
+      },
   };
 }
 

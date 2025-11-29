@@ -1,4 +1,5 @@
 const { Router } = require("express");
+const authRouter = require("./auth.js")
 const scrappingRouter = require("./scrapping");
 const tagRouter = require("./tag.js");
 const periodeRouter = require("./periode.js");
@@ -14,6 +15,7 @@ const researchRouter = require("./sinta_researches.js")
 
 const routers = Router()
 
+routers.use("/auth", authRouter)
 routers.use('/scrapping', scrappingRouter) 
 routers.use('/tag', tagRouter) 
 routers.use('/periode', periodeRouter) 

@@ -1,9 +1,11 @@
 const app = require("./app");
-const { seqelizeConnection, connectDB } = require("./databases/DbConnection");
+const { sequelizeConnection, connectDB } = require("./databases/DbConnection");
+const { SIMsequelizeConnection, SIMconnectDB } = require("./databases/SimDbConnection");
 const env = require("./config/env"); 
 
 // setup database connection
 connectDB();
+SIMconnectDB();
 
 // server
 const port = env("APP_PORT") || 8000;
@@ -17,7 +19,8 @@ const server = app.listen(port, () => {
 // ======================
 const closeConnection = async () => {
     console.log('SIGINT received. Closing database connection...');
-    seqelizeConnection.close();
+    sequelizeConnection.close();
+    SIMsequelizeConnection.close();
     console.log('Database connection closed');
     process.exit(0);
 }

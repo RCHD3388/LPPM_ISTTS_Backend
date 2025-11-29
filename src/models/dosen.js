@@ -16,13 +16,15 @@ module.exports = (sequelize, DataTypes) => {
       },
       code: {type:DataTypes.STRING,allowNull:true},
       name: {type:DataTypes.STRING,allowNull:true},
+      email: {type:DataTypes.STRING,allowNull:true},
       sinta_id: {type:DataTypes.STRING,allowNull:true},
       bank_id: {type:DataTypes.STRING,allowNull:true},
       account_no: {type:DataTypes.STRING,allowNull:true},
       account_name: {type:DataTypes.STRING,allowNull:true},
-      role_id: {type:DataTypes.STRING,allowNull:true},
+      role_id: {type:DataTypes.STRING,allowNull:true, defaultValue:"1"},
       pp_url: {type:DataTypes.STRING,allowNull:true},
-      departemen_id: {type:DataTypes.STRING,allowNull:true}
+      departemen_id: {type:DataTypes.STRING,allowNull:true},
+      status: {type:DataTypes.INTEGER,defaultValue:1,allowNull:false},
     },
     {
       sequelize,

@@ -1,3 +1,6 @@
+const dotenv = require('dotenv');
+dotenv.config();
+
 const databaseConfig = {
     development: {
         HOST: process.env.MYSQL_DEVELOPMENT_HOST || 'localhost',
@@ -10,6 +13,21 @@ const databaseConfig = {
         USERNAME: process.env.MYSQL_PRODUCTION_USERNAME || 'root',
         PASSWORD: process.env.MYSQL_PRODUCTION_PASSWORD || '',
         DATABASE: process.env.MYSQL_PRODUCTION_NAME || 'LPPM_ISTTS_DB',
+    },
+};
+
+const SIMConnectionDatabaseConfig = {
+    development: {
+        HOST: process.env.SIM_MYSQL_DEVELOPMENT_HOST || 'localhost',
+        USERNAME: process.env.SIM_MYSQL_DEVELOPMENT_USERNAME || 'root',
+        PASSWORD: process.env.SIM_MYSQL_DEVELOPMENT_PASSWORD || '',
+        DATABASE: process.env.SIM_MYSQL_DEVELOPMENT_NAME || 'SIM_ISTTS_DB',
+    },
+    production: {
+        HOST: process.env.SIM_MYSQL_PRODUCTION_HOST || 'localhost',
+        USERNAME: process.env.SIM_MYSQL_PRODUCTION_USERNAME || 'root',
+        PASSWORD: process.env.SIM_MYSQL_PRODUCTION_PASSWORD || '',
+        DATABASE: process.env.SIM_MYSQL_PRODUCTION_NAME || 'SIM_ISTTS_DB',
     },
 };
 
@@ -33,5 +51,6 @@ const sequelizeCLIConfig = {
 
 module.exports = {
   databaseConfig,      // dipakai aplikasi
+  SIMConnectionDatabaseConfig,
   ...sequelizeCLIConfig // dipakai sequelize-cli
 }
