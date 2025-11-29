@@ -4,6 +4,7 @@ const HttpStatus = require("../utils/http_status");
 const ApiError = require("../utils/api_error");
 const paginate = require("../utils/paginate");
 const { JENIS_DOKUMEN } = require("../utils/constants");
+const { sendNotificationEmail } = require("./../utils/email_service");
 
 const addOne = async (req, res, next) => {
   try {
@@ -46,6 +47,17 @@ const addOne = async (req, res, next) => {
       }, { transaction });
 
       await transaction.commit();
+
+      (async () => {
+        try {
+          await sendNotificationEmail({
+            tipe: "File Penting", // Tipe notifikasi
+            judul: title,        // Judul dari req.body
+          });
+        } catch (emailError) {
+          console.error("Gagal mengirim email massal untuk File Penting:", emailError);
+        }
+      })();
 
       return res
         .status(HttpStatus.CREATED)

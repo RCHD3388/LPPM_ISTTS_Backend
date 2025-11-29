@@ -3,6 +3,9 @@ const { sequelizeConnection, connectDB } = require("./databases/DbConnection");
 const { SIMsequelizeConnection, SIMconnectDB } = require("./databases/SimDbConnection");
 const env = require("./config/env"); 
 
+const dotenv = require('dotenv');
+dotenv.config();
+
 // setup database connection
 connectDB();
 SIMconnectDB();

@@ -4,6 +4,7 @@ const HttpStatus = require("../utils/http_status");
 const ApiError = require("../utils/api_error");
 const paginate = require("../utils/paginate");
 const { JENIS_DOKUMEN } = require("../utils/constants");
+const {sendNotificationEmail} = require("./../utils/email_service");
 
 const addOne = async (req, res, next) => {
   try {
@@ -75,6 +76,18 @@ const addOne = async (req, res, next) => {
 
       await Promise.all(lampiranPromises);
       await transaction.commit();
+
+
+      (async () => {
+        try {
+          await sendNotificationEmail({
+            tipe: "Pengumuman", // Tipe notifikasi
+            judul: pengumuman.judul,        // Judul dari req.body
+          });
+        } catch (emailError) {
+          console.error("Gagal mengirim email massal untuk File Penting:", emailError);
+        }
+      })();
 
       // Respons
       return res.status(HttpStatus.CREATED).json(
@@ -186,8 +199,8 @@ const getOne = async (req, res, next) => {
     });
 
     const lampirans = await Lampiran.findAll({
-      where: { 
-        sumber_id: pengumuman.id,  
+      where: {
+        sumber_id: pengumuman.id,
         tipe_lampiran: JENIS_DOKUMEN.PENGUMUMAN
       },
     });

@@ -108,9 +108,9 @@ const getAllRequiredProposals = async (req, res, next) => {
       if (dosen) contributorsMap.get(pd.proposal_id).push({ ...dosen, status_kontributor: pd.status_kontributor });
     });
 
-    
+
     const allLaporans = await Laporan.findAll({ where: { proposal_id: { [Op.in]: proposalIds } }, raw: true });
-    const allLaporanPersetujuans = await Persetujuan.findAll({ where: { id : { [Op.in]: allLaporans.map(l => l.persetujuan_id) } }, raw: true });
+    const allLaporanPersetujuans = await Persetujuan.findAll({ where: { id: { [Op.in]: allLaporans.map(l => l.persetujuan_id) } }, raw: true });
     const allLaporanBerkas = await Lampiran.findAll({ where: { id: { [Op.in]: allLaporans.map(l => l.berkas_laporan) } }, raw: true });
     const laporanMap = new Map();
     allLaporans.forEach(laporan => {
@@ -195,7 +195,7 @@ const respondToLaporan = async (req, res, next) => {
       throw new ApiError(HttpStatus.BAD_REQUEST, "Status tanggapan tidak valid. Harus 'Disetujui' atau 'Ditolak'.");
     }
     const persetujuanStatus = status
-    if(status == TIPE_PERSETUJUAN.DITOLAK){
+    if (status == TIPE_PERSETUJUAN.DITOLAK) {
       status = STATUS_PROPOSAL_LAPORAN.DITOLAK
     }
 
@@ -251,7 +251,186 @@ const respondToLaporan = async (req, res, next) => {
   }
 };
 
+const getHistoryLaporan = async (req, res, next) => {
+  try {
+    const user = req.user;
+    let proposalIdsFilter = {};
+
+    // 1. FILTER AWAL: Tentukan proposal mana yang boleh dilihat user
+    const userProposals = await ProposalDosen.findAll({
+      where: { dosen_id: user.id },
+      attributes: ['proposal_id'],
+      raw: true,
+    });
+    const ids = userProposals.map(p => p.proposal_id);
+    if (ids.length === 0) {
+      return res.status(HttpStatus.SUCCESS).json(ApiResponse.success("Tidak ada proposal yang ditemukan.", []));
+    }
+    proposalIdsFilter = { id: { [Op.in]: ids } };
+
+
+    const baseProposals = await Proposal.findAll({
+      where: proposalIdsFilter,
+      order: [['createdAt', 'DESC']],
+      raw: true,
+    });
+
+    if (baseProposals.length === 0) {
+      return res.status(HttpStatus.SUCCESS).json(ApiResponse.success("Tidak ada proposal yang ditemukan.", []));
+    }
+
+    // 2. KUMPULKAN SEMUA ID TERKAIT
+    const proposalIds = baseProposals.map(p => p.id);
+    const periodeIds = [...new Set(baseProposals.map(p => p.periode_id))];
+    const tagIds = [...new Set(baseProposals.map(p => p.tag_id))];
+    const berkasLampiranIds = [...new Set(baseProposals.map(p => p.berkas_proposal).filter(id => id))];
+    const persetujuanIds = [...new Set(baseProposals.map(p => p.persetujuan_id).filter(id => id))];
+
+    // 3. AMBIL SEMUA DATA TERKAIT SECARA MASSAL
+    const [periodes, tags, proposalDosens, berkasLampirans, persetujuans] = await Promise.all([
+      Periode.findAll({ where: { id: { [Op.in]: periodeIds } }, raw: true }),
+      Tag.findAll({ where: { id: { [Op.in]: tagIds } }, raw: true }),
+      ProposalDosen.findAll({ where: { proposal_id: { [Op.in]: proposalIds } }, raw: true }),
+      Lampiran.findAll({ where: { id: { [Op.in]: berkasLampiranIds } }, raw: true }),
+      Persetujuan.findAll({ where: { id: { [Op.in]: persetujuanIds } }, raw: true })
+    ]);
+
+    // Ambil data dosen & lampiran yang terkait dengan persetujuan & kontributor
+    const allDosenIds = [...new Set(proposalDosens.map(pd => pd.dosen_id).concat(persetujuans.map(p => p.dosen_id)))];
+    const allLampiranPersetujuanIds = [...new Set(persetujuans.map(p => p.lampiran_id))];
+
+    const [allDosens, allLampiranPersetujuan] = await Promise.all([
+      Dosen.findAll({ where: { id: { [Op.in]: allDosenIds } }, attributes: ['id', 'code', 'name'], raw: true }),
+      Lampiran.findAll({ where: { id: { [Op.in]: allLampiranPersetujuanIds } }, raw: true }),
+    ]);
+
+    // 4. BUAT PETA (MAP) UNTUK PENCARIAN CEPAT
+    const periodeMap = new Map(periodes.map(p => [p.id, p]));
+    const tagMap = new Map(tags.map(t => [t.id, t]));
+    const berkasLampiranMap = new Map(berkasLampirans.map(l => [l.id, l]));
+    const dosenMap = new Map(allDosens.map(d => [d.id, d]));
+    const lampiranPersetujuanMap = new Map(allLampiranPersetujuan.map(l => [l.id, l]));
+
+    const contributorsMap = new Map();
+    proposalDosens.forEach(pd => {
+      if (!contributorsMap.has(pd.proposal_id)) {
+        contributorsMap.set(pd.proposal_id, []);
+      }
+      const dosen = dosenMap.get(pd.dosen_id);
+      if (dosen) {
+        contributorsMap.get(pd.proposal_id).push({ ...dosen, status_kontributor: pd.status_kontributor });
+      }
+    });
+
+    // setup lampiran
+    const allLaporans = await Laporan.findAll({ where: { proposal_id: { [Op.in]: proposalIds } }, raw: true });
+    const allLaporanPersetujuans = await Persetujuan.findAll({ where: { id: { [Op.in]: allLaporans.map(l => l.persetujuan_id) } }, raw: true });
+    const allLaporanBerkas = await Lampiran.findAll({ where: { id: { [Op.in]: allLaporans.map(l => l.berkas_laporan) } }, raw: true });
+    const laporanMap = new Map();
+    allLaporans.forEach(laporan => {
+      if (!laporanMap.has(laporan.proposal_id)) {
+        laporanMap.set(laporan.proposal_id, []);
+      }
+
+      const persetujuanData = allLaporanPersetujuans.find(p => p.id === laporan.persetujuan_id) || null;
+      let persetujuanLaporan = null;
+      if (persetujuanData) {
+        const dosenPersetujuan = dosenMap.get(persetujuanData.dosen_id) || null;
+        const lampiranPersetujuan = lampiranPersetujuanMap.get(persetujuanData.lampiran_id) || null;
+        persetujuanLaporan = {
+          id: persetujuanData.id,
+          tipe: persetujuanData.tipe,
+          dosen: dosenPersetujuan ? { id: dosenPersetujuan.id, code: dosenPersetujuan.code, name: dosenPersetujuan.name } : null,
+          berkas_lampiran: lampiranPersetujuan ? lampiranPersetujuan.sumber_lampiran : null
+        };
+      }
+
+      laporanMap.get(laporan.proposal_id).push({
+        id: laporan.id,
+        status: laporan.status, // Diganti dari status_id
+        catatan: laporan.catatan,
+        berkas_laporan: allLaporanBerkas.find(l => l.id === laporan.berkas_laporan)?.sumber_lampiran || null,
+        persetujuan: persetujuanLaporan,
+        date: laporan.createdAt
+      });
+    });
+
+    // 5. RAKIT RESPONS AKHIR
+    const finalResult = baseProposals.map(proposal => {
+      const periode = periodeMap.get(proposal.periode_id) || null;
+      const tag = tagMap.get(proposal.tag_id) || null;
+      const persetujuanData = persetujuans.find(p => p.id === proposal.persetujuan_id) || null;
+
+      let persetujuan = null;
+      if (persetujuanData) {
+        const dosenPersetujuan = dosenMap.get(persetujuanData.dosen_id) || null;
+        const lampiranPersetujuan = lampiranPersetujuanMap.get(persetujuanData.lampiran_id) || null;
+        persetujuan = {
+          id: persetujuanData.id,
+          tipe: persetujuanData.tipe,
+          dosen: dosenPersetujuan ? { id: dosenPersetujuan.id, code: dosenPersetujuan.code, name: dosenPersetujuan.name } : null,
+          berkas_lampiran: lampiranPersetujuan ? lampiranPersetujuan.sumber_lampiran : null
+        };
+      }
+
+      return {
+        id: proposal.id,
+        judul: proposal.judul,
+        jenis_proposal: proposal.jenis_proposal,
+        periode: periode ? { id: periode.id, name: periode.name } : null,
+        tag: tag ? { id: tag.id, name: tag.name } : null,
+        kontributor: contributorsMap.get(proposal.id) || [],
+        dana_diajukan: proposal.dana_diajukan,
+        dana_disetujui: proposal.dana_disetujui,
+        status: proposal.status,
+        berkas_proposal: berkasLampiranMap.get(proposal.berkas_proposal)?.sumber_lampiran || null,
+        persetujuan: persetujuan,
+        date: proposal.createdAt,
+        laporan: laporanMap.get(proposal.id)
+      };
+    });
+
+    const cleanedFinalResults = finalResult.map((proposal) => {
+      // Filter laporan sesuai status disetujui
+      const filteredLaporan = Array.isArray(proposal.laporan)
+        ? proposal.laporan.filter(
+          (lap) => lap.status === STATUS_PROPOSAL_LAPORAN.DISETUJUI
+        )
+        : [];
+
+      return {
+        ...proposal,
+        laporan: filteredLaporan,
+      };
+    });
+
+    // Ambil hanya proposal yang punya laporan (tidak kosong)
+    const proposalsWithApprovedLaporan = cleanedFinalResults.filter(
+      (p) => p.laporan.length > 0
+    );
+
+    const laporanFinalResults = [];
+    for (const proposal of proposalsWithApprovedLaporan) {
+      const { laporan, ...proposalWithoutLaporan } = proposal; // hapus field laporan
+
+      for (const lap of laporan) {
+        laporanFinalResults.push({
+          ...lap,
+          proposal: proposalWithoutLaporan,
+        });
+      }
+    }
+
+
+    res.status(HttpStatus.SUCCESS).json(ApiResponse.success("Data proposal berhasil diambil.", laporanFinalResults));
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllRequiredProposals,
-  respondToLaporan
+  respondToLaporan,
+  getHistoryLaporan
 };

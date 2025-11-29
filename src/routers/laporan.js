@@ -10,6 +10,12 @@ routers.get("/required",
     authorizeRole("1", "2"),
     laporanController.getAllRequiredProposals);
 
+routers.get("/history", 
+  authenticateToken,
+  authorizeRole("1", "2"),
+  laporanController.getHistoryLaporan
+)
+
 routers.post(
   "/:id/respond",
   authenticateToken,

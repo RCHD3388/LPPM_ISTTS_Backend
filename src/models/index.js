@@ -30,6 +30,7 @@ db.Pengumuman = require("./pengumuman.js")(sequelize, Sequelize.DataTypes)
 db.Laporan = require("./laporan.js")(sequelize, Sequelize.DataTypes)
 db.ProposalDosen = require("./proposal_dosen.js")(sequelize, Sequelize.DataTypes)
 db.Persetujuan = require("./persetujuan.js")(sequelize, Sequelize.DataTypes)
+db.Milis = require("./milis.js")(sequelize, Sequelize.DataTypes)
 
 db.Articles = require("./articles.js")(sequelize,Sequelize.DataTypes)
 db.Departement = require("./departement.js")(sequelize,Sequelize.DataTypes)
