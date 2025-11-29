@@ -24,7 +24,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false
       },
-      tipe_lampiran: { // untuk File Penting / Pengumuman
+      tipe_lampiran: { // untuk File Penting / Pengumuman / Proposal / Laporan
         type: DataTypes.STRING,
         allowNull: false
       },
@@ -32,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false
       },
-      sumber_id: { // untuk simpen id dari file penting atau pengumuman
+      sumber_id: { // untuk simpen proposal / laporan
         type: DataTypes.INTEGER,
         allowNull: false
       }
