@@ -3,8 +3,8 @@ const PeriodeController = require("../controllers/periode_controller");
 
 const routers = Router();
 
-routers.post("/", PeriodeController.addOne);
-routers.put("/:id", PeriodeController.editOne);
+routers.post("/", authenticateToken, authorizeRole("2"),PeriodeController.addOne);
+routers.put("/:id", authenticateToken, authorizeRole("2"), PeriodeController.editOne);
 routers.get("/:id", PeriodeController.getOneById);
 routers.get("/", PeriodeController.getAll);
 

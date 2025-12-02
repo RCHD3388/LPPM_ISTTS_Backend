@@ -3,8 +3,8 @@ const BankController = require("../controllers/bank_controller");
 
 const routers = Router();
 
-routers.post("/", BankController.addOne);
-routers.put("/:id", BankController.editOne);
+routers.post("/", authenticateToken, authorizeRole("2"), BankController.addOne);
+routers.put("/:id", authenticateToken, authorizeRole("2"), BankController.editOne);
 routers.get("/:id", BankController.getOneById);
 routers.get("/", BankController.getAll);
 
