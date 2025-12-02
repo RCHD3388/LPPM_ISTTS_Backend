@@ -45,11 +45,13 @@ const getDosenCombobox = async (req, res, next) => {
       })
     );
 
-    console.log(comboBoxItem);
+    const filtered = comboBoxItem.filter((data) => data.id != null);
+
+    console.log(filtered);
 
 
     return res.json(
-      ApiResponse.success("Affiliation Articles retrieved successfully", comboBoxItem)
+      ApiResponse.success("Affiliation Articles retrieved successfully", filtered)
     );
   } catch (error) {
     next(error);
