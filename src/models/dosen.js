@@ -16,6 +16,7 @@ module.exports = (sequelize, DataTypes) => {
       },
       code: {type:DataTypes.STRING,allowNull:true},
       name: {type:DataTypes.STRING,allowNull:true},
+      name_tanpa_gelar: {type:DataTypes.STRING,allowNull:true},
       email: {type:DataTypes.STRING,allowNull:true},
       sinta_id: {type:DataTypes.STRING,allowNull:true},
       bank_id: {type:DataTypes.STRING,allowNull:true},

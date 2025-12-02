@@ -7,6 +7,7 @@ module.exports = {
       id: { type: Sequelize.INTEGER, autoIncrement: true, primaryKey: true },
       code: Sequelize.STRING,
       name: Sequelize.STRING,
+      name_tanpa_gelar: Sequelize.STRING,
       email: Sequelize.STRING,
       sinta_id: Sequelize.STRING,
       bank_id: Sequelize.STRING,

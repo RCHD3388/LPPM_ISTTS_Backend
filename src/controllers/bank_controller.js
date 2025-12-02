@@ -81,9 +81,13 @@ const getOneById = async (req, res, next) => {
 
 const getAll = async (req, res, next) => {
   try {
+    let q  = { ...req.query }
+    q.sortBy = "name";
+    q.order = "ASC";
+
     const result = await paginate(
       Bank,
-      req.query,
+      q,
       {}, // opsional: where, include, dll
       ["name"] // field yang bisa dicari dengan LIKE
     );

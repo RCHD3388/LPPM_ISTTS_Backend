@@ -85,10 +85,13 @@ const getAll = async (req, res, next) => {
     if(req.query.status){
       whereOptions.status = req.query.status;
     }
-    
+    let q  = { ...req.query }
+    q.sortBy = "name";
+    q.order = "ASC";
+
     const result = await paginate(
       Tag,
-      req.query,
+      q,
       {where: whereOptions}, // opsional: where, include, dll
       ["name"] // field yang bisa dicari dengan LIKE
     );

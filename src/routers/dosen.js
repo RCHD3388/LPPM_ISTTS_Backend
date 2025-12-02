@@ -4,7 +4,7 @@ const { authenticateToken, authorizeRole } = require("../middlewares/auth_contro
 const routers = Router();
 
 routers.put("/:id", authenticateToken, DosenController.updateDosen);
-routers.get("/profile/:id", DosenController.getDosenProfile);
+routers.get("/profile/:id", authenticateToken, DosenController.getDosenProfile);
 routers.get("/all", authenticateToken, DosenController.getAll);
 
 

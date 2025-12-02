@@ -135,7 +135,7 @@ const syncDataDosen = async (req, res, next) => {
     const allNips = listDosen.map((dosen) => dosen.karyawanNip);
 
     const listKaryawan = await SimKaryawan.findAll({
-      attributes: ["karyawanNip", "karyawanEmail"],
+      attributes: ["karyawanNip", "karyawanEmail", "karyawanNama"],
       where: {
         karyawanNip: {
           [Op.in]: allNips,
@@ -160,6 +160,7 @@ const syncDataDosen = async (req, res, next) => {
           code: dosen.dosenKode,
           email: matchingKaryawan.karyawanEmail,
           name: dosen.dosenNamaSk,
+          name_tanpa_gelar: matchingKaryawan.karyawanNama,
           status: dosen.dosenStatus,
         });
       }
@@ -186,6 +187,7 @@ const syncDataDosen = async (req, res, next) => {
         // Data sudah ada, periksa perubahan
         const payloadToUpdate = {};
         if (sourceDosen.name !== existingDosen.name) payloadToUpdate.name = sourceDosen.name;
+        if (sourceDosen.name_tanpa_gelar !== existingDosen.name_tanpa_gelar) payloadToUpdate.name_tanpa_gelar = sourceDosen.name_tanpa_gelar;
         if (sourceDosen.email !== existingDosen.email) payloadToUpdate.email = sourceDosen.email;
         // Selalu update status agar sinkron dengan data sumber
         if (sourceDosen.status !== existingDosen.status) payloadToUpdate.status = sourceDosen.status;

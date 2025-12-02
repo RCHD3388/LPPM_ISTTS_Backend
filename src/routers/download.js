@@ -15,7 +15,7 @@ const routers = Router();
 routers.get("/", async (req, res, next) => { // 👈 jangan lupa tambahkan `next` di sini
   try {
     const { id } = req.query;
-
+    console.log(id);
     // Cari lampiran
     const lampiran = await Lampiran.findOne({
       where: {

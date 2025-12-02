@@ -23,6 +23,7 @@ const googleLoginController = async (req, res, next) => {
         const googlePayload = await verifyGoogleToken(token);
         const userEmail = googlePayload.email;
 
+        console.log(userEmail)
         const dosen = await Dosen.findOne({ where: { email: userEmail, status: 1 } });
         if (!dosen) {
             throw new ApiError(HttpStatus.NOT_FOUND, 

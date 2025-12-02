@@ -28,10 +28,14 @@ async function paginate(model, query = {}, options = {}, searchableFields = []) 
 
   // --- Ordering ---
   let order = options.order || [];
+  console.log(query)
   if (query.sortBy) {
+    // console.log("asd")
     const sortOrder = query.order && query.order.toUpperCase() === "ASC" ? "ASC" : "DESC";
     order = [[query.sortBy, sortOrder]];
   }
+  console.log(order)
+  // console.log(model.rawAttributes)
 
   const { count, rows } = await model.findAndCountAll({
     ...options,
