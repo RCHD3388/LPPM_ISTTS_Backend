@@ -230,30 +230,38 @@ const syncDataDosen = async (req, res, next) => {
       }
 
       // ----- add template -----
-      const specialKALPPMDosenCode = "AAAA";
-      const specialDosenCode = "BBBB";
-      await Dosen.destroy({
-        where: { code: specialDosenCode },
-        transaction,
-      });
-      await Dosen.destroy({
-        where: { code: specialKALPPMDosenCode },
-        transaction,
-      });
-      await Dosen.create({
-        code: specialKALPPMDosenCode,
-        name: "Richard Rafer Guy",
-        email: "richard.r22@mhs.istts.ac.id",
-        role_id: '2', // Sesuai model, role_id adalah STRING
-        status: 1,
-      }, { transaction });
-      await Dosen.create({
-        code: specialDosenCode,
-        name: "Rafer",
-        email: "rraferg33@gmail.com",
-        role_id: '1', // Sesuai model, role_id adalah STRING
-        status: 1,
-      }, { transaction });
+      // const specialKALPPMDosenCode = "AAAA";
+      // const specialDosenCode = "BBBB";
+      // await Dosen.destroy({
+      //   where: { code: specialDosenCode },
+      //   transaction,
+      // });
+      // await Dosen.destroy({
+      //   where: { code: specialKALPPMDosenCode },
+      //   transaction,
+      // });
+      // await Dosen.create({
+      //   code: specialKALPPMDosenCode,
+      //   name: "Richard Rafer Guy",
+      //   email: "richard.r22@mhs.istts.ac.id",
+      //   role_id: '2', // Sesuai model, role_id adalah STRING
+      //   status: 1,
+      // }, { transaction });
+      // await Dosen.create({
+      //   code: specialDosenCode,
+      //   name: "Rafer",
+      //   email: "rraferg33@gmail.com",
+      //   role_id: '1', // Sesuai model, role_id adalah STRING
+      //   status: 1,
+      // }, { transaction });
+      // await Dosen.create({
+      //   code: "FERDI",
+      //   name: "Ferdinand",
+      //   email: "ferdi.s22@mhs.istts.ac.id",
+      //   role_id: '2', // Sesuai model, role_id adalah STRING
+      //   status: 1,
+      // }, { transaction });
+      
       // ----- add template -----
 
       await transaction.commit();
